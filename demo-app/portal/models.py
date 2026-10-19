@@ -59,6 +59,28 @@ class Application(Base):
     )
 
 
+class ApplicationCode(Base):
+    __tablename__ = "application_code"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    html_code: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    css_code: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    js_code: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
 class ApplicationHistory(Base):
     __tablename__ = "application_history"
 

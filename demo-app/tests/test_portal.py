@@ -2,6 +2,7 @@ import csv
 import asyncio
 import io
 import re
+import smtplib
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,8 +11,9 @@ from unittest.mock import AsyncMock, patch
 import httpx
 from fastapi.testclient import TestClient
 
-from portal.app import create_app
-from portal.models import Application, User
+from portal.app import create_app, registered_application_observations
+from portal.email import EmailSettings, send_email
+from portal.models import Application, ApplicationCode, User
 from portal.security import verify_password
 from portal.web import fetch_application_health, health_snapshot
 
@@ -115,6 +117,97 @@ class PortalIntegrationTests(unittest.TestCase):
             },
         )
 
+    def test_account_creation_sends_welcome_email_without_password(self):
+        self.assertEqual(self.login().status_code, 200)
+        self.app.state.email_settings = EmailSettings(
+            host="smtp.example.test",
+            port=587,
+            username="portal@example.test",
+            password="smtp-secret",
+            sender="portal@example.test",
+            use_starttls=True,
+            portal_url="https://portal.example.test",
+        )
+        initial_password = "Temporary-password-2026!"
+        with patch("portal.web.send_email") as send:
+            response = self.create_user(
+                "Stagiaire e-mail",
+                "stagiaire-mail@example.local",
+                "stagiaire",
+                initial_password,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("E-mail de bienvenue envoyé", response.text)
+        send.assert_called_once()
+        settings, recipient, subject, body = send.call_args.args
+        self.assertEqual(settings.host, "smtp.example.test")
+        self.assertEqual(recipient, "stagiaire-mail@example.local")
+        self.assertIn("bienvenue", subject.lower())
+        self.assertIn("https://portal.example.test", body)
+        self.assertNotIn(initial_password, body)
+
+    def test_account_creation_reports_when_email_is_not_configured(self):
+        self.assertEqual(self.login().status_code, 200)
+        response = self.create_user(
+            "Stagiaire sans SMTP",
+            "stagiaire-sans-smtp@example.local",
+            "stagiaire",
+            "Temporary-password-2026!",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("serveur SMTP n’est pas configuré", response.text)
+
+    def test_smtp_failure_is_reported_without_rolling_back_account(self):
+        self.assertEqual(self.login().status_code, 200)
+        self.app.state.email_settings = EmailSettings(
+            host="smtp.example.test",
+            port=587,
+            username="portal@example.test",
+            password="smtp-secret",
+            sender="portal@example.test",
+            use_starttls=True,
+            portal_url="https://portal.example.test",
+        )
+        with patch(
+            "portal.web.send_email",
+            side_effect=smtplib.SMTPException("SMTP unavailable"),
+        ):
+            response = self.create_user(
+                "Stagiaire SMTP indisponible",
+                "stagiaire-smtp-ko@example.local",
+                "stagiaire",
+                "Temporary-password-2026!",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("n’a pas pu être envoyé", response.text)
+        with self.app.state.session_factory() as session:
+            self.assertIsNotNone(
+                session.query(User)
+                .filter(User.email == "stagiaire-smtp-ko@example.local")
+                .one_or_none()
+            )
+
+    def test_smtp_sender_uses_starttls_and_authentication(self):
+        settings = EmailSettings(
+            host="smtp.example.test",
+            port=587,
+            username="portal@example.test",
+            password="smtp-secret",
+            sender="portal@example.test",
+            use_starttls=True,
+            portal_url="https://portal.example.test",
+        )
+        with patch("portal.email.smtplib.SMTP") as smtp:
+            send_email(settings, "recipient@example.test", "Sujet", "Contenu")
+
+        smtp.assert_called_once_with("smtp.example.test", 587, timeout=10)
+        server = smtp.return_value.__enter__.return_value
+        server.starttls.assert_called_once()
+        server.login.assert_called_once_with("portal@example.test", "smtp-secret")
+        server.send_message.assert_called_once()
+
     def prepare_accounts_and_application(self):
         self.assertEqual(self.login().status_code, 200)
         intern = self.create_user(
@@ -192,6 +285,31 @@ class PortalIntegrationTests(unittest.TestCase):
         self.assertIn("Fiche créée", detail.text)
         self.assertIn('data-health-status="no-data"', detail.text)
         self.assertIn("/grafana/d/stagiaires-applications/applications-stagiaires", detail.text)
+        self.assertIn("OTEL_SERVICE_NAME=test-api", detail.text)
+        self.assertIn(
+            "OTEL_EXPORTER_OTLP_ENDPOINT=http://portal-otel-gateway:4317",
+            detail.text,
+        )
+        self.assertIn("OTEL_METRICS_EXPORTER=otlp", detail.text)
+        self.assertIn("OTEL_LOGS_EXPORTER=otlp", detail.text)
+        self.assertIn("ne peut pas modifier le code ni l’environnement", detail.text)
+        self.assertIn("Vérifier le raccordement", detail.text)
+        observations = registered_application_observations(
+            self.app.state.session_factory
+        )
+        self.assertIn(
+            {
+                "value": 1,
+                "attributes": {"application_service_name": "test-api"},
+            },
+            [
+                {
+                    "value": observation.value,
+                    "attributes": dict(observation.attributes),
+                }
+                for observation in observations
+            ],
+        )
         health = self.client.get("/applications/1/health")
         self.assertEqual(health.status_code, 200)
         self.assertEqual(health.json()["status"], "no-data")
@@ -216,6 +334,201 @@ class PortalIntegrationTests(unittest.TestCase):
         updated = self.client.get("/applications/1")
         self.assertIn("API de test mise à jour", updated.text)
         self.assertIn("Fiche modifiée", updated.text)
+
+    def test_telemetry_check_reports_signals_and_requires_csrf(self):
+        self.assertEqual(self.login().status_code, 200)
+        self.create_user(
+            "Stagiaire A",
+            "stagiaire-a@example.local",
+            "stagiaire",
+            INTERN_PASSWORD,
+        )
+        with self.app.state.session_factory() as session:
+            owner_id = (
+                session.query(User.id)
+                .filter(User.email == "stagiaire-a@example.local")
+                .scalar()
+            )
+        self.assertEqual(self.create_application(owner_id=owner_id).status_code, 200)
+        self.app.state.slack_alerts_enabled = True
+        check_url = "/applications/1/telemetry/check"
+        self.assertEqual(self.client.post(check_url).status_code, 403)
+
+        with patch(
+            "portal.web.fetch_application_telemetry_status",
+            new=AsyncMock(
+                return_value={
+                    "status": "connected",
+                    "http": True,
+                    "heartbeat": True,
+                    "sql": False,
+                    "jobs": False,
+                }
+            ),
+        ) as telemetry_check:
+            response = self.client.post(
+                check_url,
+                data={"csrf_token": self.csrf(self.client.get("/applications/1"))},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("métriques HTTP reçues", response.text)
+        self.assertIn("battement reçu", response.text)
+        self.assertIn("métriques SQL absentes", response.text)
+        self.assertIn("Alertes Slack configurées au niveau de la plateforme", response.text)
+        telemetry_check.assert_awaited_once_with(
+            "test-api",
+            self.app.state.prometheus_url,
+        )
+
+    def test_code_studio_saves_site_code_and_isolates_preview(self):
+        self.assertEqual(self.login().status_code, 200)
+        self.create_user(
+            "Stagiaire A",
+            "stagiaire-a@example.local",
+            "stagiaire",
+            INTERN_PASSWORD,
+        )
+        with self.app.state.session_factory() as session:
+            owner_id = (
+                session.query(User.id)
+                .filter(User.email == "stagiaire-a@example.local")
+                .scalar()
+            )
+        self.assertEqual(self.create_application(owner_id=owner_id).status_code, 200)
+
+        detail = self.client.get("/applications/1")
+        self.assertIn('href="/applications/1/studio"', detail.text)
+        studio = self.client.get("/applications/1/studio")
+        self.assertEqual(studio.status_code, 200)
+        self.assertIn('sandbox="allow-scripts"', studio.text)
+        self.assertIn("ne modifie pas le", studio.text)
+        csrf = self.csrf(studio)
+        source = {
+            "html_code": '<main><h1>Édition du site test</h1><p id="result"></p></main>',
+            "css_code": "body { color: #234; }",
+            "js_code": 'document.querySelector("#result").textContent = "Aperçu actif";',
+        }
+        saved = self.client.post(
+            "/applications/1/studio",
+            data={"csrf_token": csrf, "revision": "0", **source},
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertIn("Version 1 enregistrée", saved.text)
+
+        preview = self.client.get("/applications/1/preview")
+        self.assertEqual(preview.status_code, 200)
+        self.assertIn(source["html_code"], preview.text)
+        self.assertIn(source["css_code"], preview.text)
+        self.assertIn(source["js_code"], preview.text)
+        policy = preview.headers["content-security-policy"]
+        self.assertIn("sandbox allow-scripts", policy)
+        self.assertIn("connect-src 'none'", policy)
+        self.assertIn("script-src 'unsafe-inline'", policy)
+        self.assertIn("frame-ancestors 'self'", policy)
+
+        with self.app.state.session_factory() as session:
+            saved_code = (
+                session.query(ApplicationCode)
+                .filter_by(application_id=1)
+                .one()
+            )
+            self.assertEqual(saved_code.revision, 1)
+            self.assertEqual(saved_code.updated_by_id, 1)
+
+        stale = self.client.post(
+            "/applications/1/studio",
+            data={
+                "csrf_token": csrf,
+                "revision": "0",
+                **{**source, "html_code": "<h1>Ancienne version</h1>"},
+            },
+        )
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(
+            re.search(r'name="revision"\s+value="([^"]+)"', stale.text).group(1),
+            "0",
+        )
+        repeated_stale = self.client.post(
+            "/applications/1/studio",
+            data={
+                "csrf_token": csrf,
+                "revision": "0",
+                **{**source, "html_code": "<h1>Ancienne version</h1>"},
+            },
+        )
+        self.assertEqual(repeated_stale.status_code, 409)
+        with self.app.state.session_factory() as session:
+            saved_code = session.query(ApplicationCode).filter_by(application_id=1).one()
+            self.assertEqual(saved_code.revision, 1)
+            self.assertEqual(saved_code.html_code, source["html_code"])
+
+        oversized = self.client.post(
+            "/applications/1/studio",
+            data={
+                "csrf_token": csrf,
+                "revision": "1",
+                **{**source, "html_code": "x" * 20001},
+            },
+        )
+        self.assertEqual(oversized.status_code, 422)
+        self.assertIn("20 000 caractères", oversized.text)
+        with self.app.state.session_factory() as session:
+            saved_code = session.query(ApplicationCode).filter_by(application_id=1).one()
+            self.assertEqual(saved_code.revision, 1)
+            self.assertEqual(saved_code.html_code, source["html_code"])
+
+        missing_csrf = self.client.post(
+            "/applications/1/studio",
+            data={"revision": "1", **source},
+        )
+        self.assertEqual(missing_csrf.status_code, 403)
+
+    def test_code_studio_enforces_application_ownership_and_reader_role(self):
+        owner_a, application_a = self.prepare_accounts_and_application()
+        self.create_user(
+            "Stagiaire B",
+            "stagiaire-b@example.local",
+            "stagiaire",
+            "Intern-B-password-2026!",
+        )
+        with self.app.state.session_factory() as session:
+            owner_b = (
+                session.query(User.id)
+                .filter(User.email == "stagiaire-b@example.local")
+                .scalar()
+            )
+        self.assertEqual(
+            self.create_application(
+                service_name="other-api",
+                name="Autre API",
+                owner_id=owner_b,
+            ).status_code,
+            200,
+        )
+
+        intern = TestClient(self.app)
+        self.addCleanup(intern.close)
+        self.assertEqual(
+            self.login(
+                intern,
+                "stagiaire-a@example.local",
+                INTERN_PASSWORD,
+            ).status_code,
+            200,
+        )
+        self.assertEqual(intern.get(f"/applications/{application_a}/studio").status_code, 200)
+        self.assertEqual(intern.get("/applications/2/studio").status_code, 404)
+        self.assertEqual(intern.get("/applications/2/preview").status_code, 404)
+
+        reader = TestClient(self.app)
+        self.addCleanup(reader.close)
+        self.assertEqual(
+            self.login(reader, "lecteur@example.local", READER_PASSWORD).status_code,
+            200,
+        )
+        self.assertEqual(reader.get(f"/applications/{application_a}/studio").status_code, 403)
+        self.assertEqual(owner_a, 2)
 
     def test_intern_can_only_view_and_edit_owned_applications(self):
         owner_a, application_a = self.prepare_accounts_and_application()
@@ -262,6 +575,125 @@ class PortalIntegrationTests(unittest.TestCase):
         self.assertEqual(intern_client.get("/applications/2/health").status_code, 404)
         self.assertEqual(intern_client.get("/applications/2/edit").status_code, 404)
         self.assertEqual(owner_a, 2)
+
+    def test_registered_application_metric_excludes_archived_applications(self):
+        self.prepare_accounts_and_application()
+        active = registered_application_observations(
+            self.app.state.session_factory
+        )
+        self.assertIn(
+            "test-api",
+            {
+                observation.attributes["application_service_name"]
+                for observation in active
+            },
+        )
+        with self.app.state.session_factory() as session:
+            application = (
+                session.query(Application)
+                .filter_by(service_name="test-api")
+                .one()
+            )
+            application.archived = True
+            session.commit()
+
+        archived = registered_application_observations(
+            self.app.state.session_factory
+        )
+        self.assertNotIn(
+            "test-api",
+            {
+                observation.attributes["application_service_name"]
+                for observation in archived
+            },
+        )
+
+    def test_portal_handles_fifty_simulated_applications(self):
+        self.assertEqual(self.login().status_code, 200)
+        intern = self.create_user(
+            "Stagiaire simulation",
+            "simulation@example.local",
+            "stagiaire",
+            INTERN_PASSWORD,
+        )
+        self.assertEqual(intern.status_code, 200)
+        with self.app.state.session_factory() as session:
+            owner_id = (
+                session.query(User.id)
+                .filter(User.email == "simulation@example.local")
+                .scalar()
+            )
+
+        for number in range(1, 51):
+            response = self.create_application(
+                service_name=f"simulation-site-{number:02d}",
+                name=f"Site simulé {number:02d}",
+                owner_id=owner_id,
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Failed to create simulated site {number}: {response.text}",
+            )
+
+        listing = self.client.get("/applications")
+        self.assertEqual(listing.status_code, 200)
+        for number in range(1, 51):
+            self.assertIn(f"simulation-site-{number:02d}", listing.text)
+
+        filtered = self.client.get("/applications?q=simulation-site-25")
+        self.assertEqual(filtered.status_code, 200)
+        self.assertIn("simulation-site-25", filtered.text)
+        self.assertNotIn("simulation-site-24", filtered.text)
+        self.assertNotIn("simulation-site-26", filtered.text)
+
+        simulated_health = AsyncMock(
+            side_effect=lambda service_names, prometheus_url: {
+                service_name: health_snapshot("healthy", 20)
+                for service_name in service_names
+            }
+        )
+        with patch(
+            "portal.web.fetch_application_health",
+            new=simulated_health,
+        ):
+            healthy = self.client.get("/applications?health=healthy")
+            self.assertEqual(healthy.status_code, 200)
+            for number in range(1, 51):
+                self.assertIn(f"simulation-site-{number:02d}", healthy.text)
+            self.assertEqual(
+                len(simulated_health.await_args.args[0]),
+                50,
+            )
+            detail = self.client.get("/applications/50")
+            self.assertEqual(detail.status_code, 200)
+            self.assertIn("OTEL_SERVICE_NAME=simulation-site-50", detail.text)
+
+        export = self.client.get("/applications/export.csv")
+        self.assertEqual(export.status_code, 200)
+        rows = list(
+            csv.reader(
+                io.StringIO(export.content.decode("utf-8-sig")),
+                delimiter=";",
+            )
+        )
+        self.assertEqual(len(rows), 51)
+        self.assertEqual(
+            {row[1] for row in rows[1:]},
+            {f"simulation-site-{number:02d}" for number in range(1, 51)},
+        )
+
+        observations = registered_application_observations(
+            self.app.state.session_factory
+        )
+        self.assertEqual(len(observations), 50)
+        self.assertEqual(
+            {
+                observation.attributes["application_service_name"]
+                for observation in observations
+            },
+            {f"simulation-site-{number:02d}" for number in range(1, 51)},
+        )
 
     def test_reader_is_read_only_and_admin_routes_are_protected(self):
         self.prepare_accounts_and_application()
@@ -404,17 +836,33 @@ class PortalIntegrationTests(unittest.TestCase):
             "stagiaire",
             "Inactive-password-2026!",
         )
-        password_page = self.client.get("/account/password")
-        changed = self.client.post(
-            "/account/password",
-            data={
-                "csrf_token": self.csrf(password_page),
-                "current_password": ADMIN_PASSWORD,
-                "new_password": "Admin-password-updated-2026!",
-                "confirm_password": "Admin-password-updated-2026!",
-            },
+        self.app.state.email_settings = EmailSettings(
+            host="smtp.example.test",
+            port=587,
+            username="portal@example.test",
+            password="smtp-secret",
+            sender="portal@example.test",
+            use_starttls=True,
+            portal_url="https://portal.example.test",
         )
+        password_page = self.client.get("/account/password")
+        new_password = "Admin-password-updated-2026!"
+        with patch("portal.web.send_email") as send:
+            changed = self.client.post(
+                "/account/password",
+                data={
+                    "csrf_token": self.csrf(password_page),
+                    "current_password": ADMIN_PASSWORD,
+                    "new_password": new_password,
+                    "confirm_password": new_password,
+                },
+            )
         self.assertEqual(changed.status_code, 200)
+        self.assertIn("Avis de sécurité envoyé par e-mail", changed.text)
+        send.assert_called_once()
+        body = send.call_args.args[3]
+        self.assertIn("vient d’être modifié", body)
+        self.assertNotIn(new_password, body)
         with self.app.state.session_factory() as session:
             admin = session.query(User).filter(User.email == ADMIN_EMAIL).one()
             self.assertTrue(verify_password(admin.password_hash, "Admin-password-updated-2026!"))

@@ -2,10 +2,13 @@
   "uid": "stagiaires-applications",
   "title": "Applications stagiaires",
   "description": "Vue réutilisable de l'activité, de la disponibilité, des erreurs, de la latence et des journaux.",
-  "tags": ["stagiaires", "opentelemetry"],
+  "tags": [
+    "stagiaires",
+    "opentelemetry"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 4,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -21,11 +24,12 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(stagiaires_app_heartbeat_timestamp_seconds, service_name)",
+        "definition": "query_result(label_replace(stagiaires_portal_applications_registered, \"service_name\", \"$1\", \"application_service_name\", \"(.+)\") or count by (service_name) ({__name__=~\"stagiaires_.*\",service_name!=\"\"}))",
         "query": {
-          "query": "label_values(stagiaires_app_heartbeat_timestamp_seconds, service_name)",
+          "query": "query_result(label_replace(stagiaires_portal_applications_registered, \"service_name\", \"$1\", \"application_service_name\", \"(.+)\") or count by (service_name) ({__name__=~\"stagiaires_.*\",service_name!=\"\"}))",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
+        "regex": "/service_name=\"([^\"]+)\"/",
         "refresh": 1,
         "sort": 1,
         "multi": true,
@@ -110,7 +114,9 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -170,7 +176,9 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -230,7 +238,9 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -320,14 +330,532 @@
         "sortOrder": "Descending",
         "wrapLogMessage": true
       }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Requ?tes par application",
+      "description": "D?bit HTTP par service. Bas? sur les compteurs OpenTelemetry stagiaires_app_requests_total.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service_name) (rate(stagiaires_app_requests_total{service_name=~\"$application\"}[5m]))",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Codes HTTP par application",
+      "description": "R?ponses HTTP/s regroup?es par application et code HTTP (2xx, 4xx, 5xx).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service_name, status_code) (rate(stagiaires_app_requests_total{service_name=~\"$application\"}[5m]))",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Top 15 des routes les plus appel?es",
+      "description": "Routes tri?es par nombre moyen de requ?tes/s sur 5 minutes; les noms de routes limitent la cardinalit?.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(15, sum by (service_name, route) (rate(stagiaires_app_requests_total{service_name=~\"$application\",route!=\"unmatched\"}[5m])))",
+          "legendFormat": "{{service_name}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Top 15 des routes les plus lentes (p95)",
+      "description": "Latence p95 par route sur 5 minutes. Exige un histogramme stagiaires_app_request_duration_milliseconds_bucket ?tiquet? par route.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(15, histogram_quantile(0.95, sum by (le, service_name, route) (rate(stagiaires_app_request_duration_milliseconds_bucket{service_name=~\"$application\",route!=\"unmatched\"}[5m]))))",
+          "legendFormat": "{{service_name}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Latence globale des requ?tes (p95)",
+      "description": "Latence p95 HTTP par application, calcul?e ? partir des histogrammes de dur?e OpenTelemetry.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(stagiaires_app_request_duration_milliseconds_bucket{service_name=~\"$application\"}[5m]))) / 1000",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Travaux en file par application",
+      "description": "N?cessite que chaque worker exporte stagiaires_job_queue_depth avec les attributs service_name et queue_name. Aucun moteur de file n?est actuellement configur? dans ce projet.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service_name, queue_name) (stagiaires_job_queue_depth{service_name=~\"$application\"})",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Dur?e p95 des travaux par classe",
+      "description": "N?cessite des histogrammes stagiaires_job_duration_seconds_bucket ?tiquet?s par service_name et job_class; aucune file de travaux n?est configur?e actuellement.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, service_name, job_class) (rate(stagiaires_job_duration_seconds_bucket{service_name=~\"$application\"}[5m])))",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Requ?tes SQL par application",
+      "description": "D?bit SQL par application et op?ration. N?cessite le compteur stagiaires_db_queries_total; ne collecte pas le texte SQL, qui peut contenir des donn?es sensibles.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service_name, db_operation) (rate(stagiaires_db_queries_total{service_name=~\"$application\"}[5m]))",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Latence p95 des requ?tes SQL",
+      "description": "Latence p95 SQL par application et type d?op?ration. N?cessite stagiaires_db_query_duration_seconds_bucket; les instructions SQL ne sont jamais des ?tiquettes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, service_name, db_operation) (rate(stagiaires_db_query_duration_seconds_bucket{service_name=~\"$application\"}[5m])))",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "text",
+      "title": "Accès Prometheus",
+      "description": "Ouvrir l'interface Prometheus locale pour consulter les règles, les alertes et interroger les métriques.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 54
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Prometheus\n\nUtilisez les liens **Prometheus — Alertes** ou **Prometheus — Requêtes** dans la barre du tableau de bord. Ils s’ouvrent dans un nouvel onglet, car l’interface Prometheus n’est pas intégrable dans ce cadre."
+      }
+    },
+    {
+      "id": 16,
+      "type": "text",
+      "title": "Accès Slack",
+      "description": "Ouvrir Slack pour consulter les alertes envoyées par Alertmanager.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 54
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Slack\n\nUtilisez le lien **Slack** dans la barre du tableau de bord pour ouvrir Slack dans un nouvel onglet. Les notifications arrivent dans le canal du webhook configuré; son URL secrète n’est jamais affichée dans Grafana."
+      }
     }
   ],
   "links": [
     {
-      "title": "Alertes Prometheus",
-      "url": "/grafana/alerting/list",
-      "targetBlank": false,
-      "icon": "bell"
+      "title": "Prometheus — Alertes",
+      "url": "/prometheus/alerts",
+      "targetBlank": true
+    },
+    {
+      "title": "Prometheus — Requêtes",
+      "url": "/prometheus/graph",
+      "targetBlank": true
+    },
+    {
+      "title": "Slack",
+      "url": "https://app.slack.com/client/",
+      "targetBlank": true
     }
   ]
 }

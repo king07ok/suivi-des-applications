@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${WEB_PORT:-8080}:80"
+      - "[::1]:${WEB_PORT:-8080}:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -17,6 +18,7 @@ services:
         condition: service_healthy
     networks:
       - frontend
+      - prometheus_web
 
   demo-app:
     build: ./demo-app
@@ -27,7 +29,15 @@ services:
       PORTAL_ADMIN_NAME: ${PORTAL_ADMIN_NAME:-Administrateur}
       PORTAL_ADMIN_EMAIL: ${PORTAL_ADMIN_EMAIL:?Set PORTAL_ADMIN_EMAIL in .env}
       PORTAL_ADMIN_PASSWORD: ${PORTAL_ADMIN_PASSWORD:?Set PORTAL_ADMIN_PASSWORD in .env}
-      PROMETHEUS_URL: http://prometheus:9090
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_STARTTLS: ${SMTP_USE_STARTTLS:-true}
+      PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:-http://localhost:8080}
+      PROMETHEUS_URL: http://prometheus:9090/prometheus
+      SLACK_ALERTS_ENABLED: ${SLACK_WEBHOOK_URL:+true}
       OTEL_SERVICE_NAME: demo-stagiaire
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
@@ -69,29 +79,59 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - telemetry
-      - backend
+      telemetry:
+        aliases:
+          - portal-otel-gateway
+      backend: {}
 
   prometheus:
     image: prom/prometheus:v3.2.1
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+      - "[::1]:9090:9090"
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=30d
+      - --web.external-url=/prometheus/
       - --web.enable-remote-write-receiver
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/-/ready"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/prometheus/-/ready"]
       interval: 15s
       timeout: 5s
       retries: 5
     networks:
       - backend
       - prometheus_api
+      - prometheus_web
+    depends_on:
+      alertmanager:
+        condition: service_healthy
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    secrets:
+      - source: slack_webhook_url
+        target: slack_webhook_url
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
 
   tempo:
     image: grafana/tempo:2.7.2
@@ -161,12 +201,19 @@ networks:
   backend:
   prometheus_api:
     internal: true
+  prometheus_web:
+    internal: true
 
 volumes:
   caddy_data:
   caddy_config:
   portal_data:
   prometheus_data:
+  alertmanager_data:
   tempo_data:
   loki_data:
   grafana_data:
+
+secrets:
+  slack_webhook_url:
+    environment: SLACK_WEBHOOK_URL

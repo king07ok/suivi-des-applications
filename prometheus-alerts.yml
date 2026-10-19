@@ -12,6 +12,25 @@ groups:
           summary: "Application {{ $labels.service_name }} silencieuse"
           description: "Aucun battement de coeur reçu depuis plus de 5 minutes."
 
+      - alert: RegisteredApplicationWithoutTelemetry
+        expr: |
+          stagiaires_portal_applications_registered{application_service_name!=""}
+          unless on (application_service_name)
+          label_replace(
+            stagiaires_app_heartbeat_timestamp_seconds{service_name!=""},
+            "application_service_name",
+            "$1",
+            "service_name",
+            "(.+)"
+          )
+        for: 2m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "Raccordement OpenTelemetry manquant pour {{ $labels.application_service_name }}"
+          description: "Cette application est enregistrée dans le portail, mais aucun battement OpenTelemetry n'a été reçu depuis au moins 2 minutes."
+
       - alert: ApplicationErrorRateHigh
         expr: |
           (
@@ -47,7 +66,7 @@ groups:
     interval: 30s
     rules:
       - alert: ObservabilityComponentDown
-        expr: up{job=~"otel-collector|tempo|loki|grafana"} == 0
+        expr: up{job=~"otel-collector|tempo|loki|grafana|alertmanager"} == 0
         for: 1m
         labels:
           severity: critical

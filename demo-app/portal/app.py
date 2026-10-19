@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from opentelemetry import metrics
+from opentelemetry.metrics import Observation
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +16,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
-from portal.models import Base, User
+from portal.email import EmailSettings
+from portal.models import Application, Base, User
 from portal.security import hash_password
 
 ROLE_LABELS = {
@@ -25,6 +28,20 @@ ROLE_LABELS = {
 PORTAL_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=str(PORTAL_DIR / "templates"))
 TEMPLATES.env.filters["loads"] = json.loads
+
+
+def registered_application_observations(session_factory):
+    with session_factory() as session:
+        service_names = (
+            session.query(Application.service_name)
+            .filter(Application.archived.is_(False))
+            .order_by(Application.service_name)
+            .all()
+        )
+    return [
+        Observation(1, {"application_service_name": service_name})
+        for (service_name,) in service_names
+    ]
 
 
 def _create_engine(database_url: str) -> Engine:
@@ -52,6 +69,7 @@ def create_app(
     database_url: str | None = None,
     session_secret_key: str | None = None,
     initial_admin: dict[str, str] | None = None,
+    email_settings: EmailSettings | None = None,
 ) -> FastAPI:
     resolved_database_url = database_url or os.getenv(
         "DATABASE_URL", "sqlite:////data/portal.db"
@@ -104,6 +122,14 @@ def create_app(
 
         application.state.session_factory = session_factory
         application.state.engine = engine
+
+        metrics.get_meter("portal.registry").create_observable_gauge(
+            "portal.applications.registered",
+            callbacks=[
+                lambda options: registered_application_observations(session_factory)
+            ],
+            description="Active applications registered in the internship portal.",
+        )
         yield
         engine.dispose()
 
@@ -129,6 +155,10 @@ def create_app(
     application.state.prometheus_url = os.getenv(
         "PROMETHEUS_URL", "http://prometheus:9090"
     ).rstrip("/")
+    application.state.slack_alerts_enabled = (
+        os.getenv("SLACK_ALERTS_ENABLED", "").strip().lower() == "true"
+    )
+    application.state.email_settings = email_settings or EmailSettings.from_env()
     from portal.web import router
 
     application.include_router(router)
@@ -139,10 +169,20 @@ def create_app(
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' data:; style-src 'self'; "
-            "form-action 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
-        )
+        if request.url.path.endswith("/preview"):
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'none'; img-src data: blob:; "
+                "style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+                "connect-src 'none'; font-src data:; media-src data:; "
+                "form-action 'none'; frame-ancestors 'self'; base-uri 'none'; "
+                "object-src 'none'; sandbox allow-scripts"
+            )
+        else:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; img-src 'self' data:; style-src 'self'; "
+                "form-action 'self'; frame-ancestors 'self'; base-uri 'self'; "
+                "object-src 'none'"
+            )
         response.headers["Cache-Control"] = "no-store"
         return response
 

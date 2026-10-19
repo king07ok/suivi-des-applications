@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import json
@@ -5,18 +6,20 @@ import logging
 import math
 import re
 import secrets
+import smtplib
 from datetime import date
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from portal.app import ROLE_LABELS, get_database, redirect, render
-from portal.models import Application, ApplicationHistory, User
+from portal.email import EmailSettings, send_email
+from portal.models import Application, ApplicationCode, ApplicationHistory, User
 from portal.security import hash_password, needs_rehash, verify_password
 
 logger = logging.getLogger(__name__)
@@ -35,6 +38,29 @@ HEALTH_LABELS = {
     "no-data": "Aucun signal",
     "unknown": "État inconnu",
 }
+MAX_CODE_LENGTH = 20000
+STARTER_HTML = """<main class="welcome">
+  <p class="eyebrow">SITE DE TEST</p>
+  <h1>Votre espace de création</h1>
+  <p>Modifiez le HTML, le CSS et le JavaScript, puis enregistrez pour voir le résultat ici.</p>
+  <button id="hello-button" type="button">Tester l’interaction</button>
+  <p id="message" role="status"></p>
+</main>"""
+STARTER_CSS = """* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 3rem;
+  color: #1c2738;
+  background: #eef1f5;
+  font: 16px/1.6 system-ui, sans-serif;
+}
+.welcome { max-width: 42rem; margin: 2rem auto; }
+.eyebrow { color: #3658b7; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+h1 { line-height: 1.15; }
+button { padding: .7rem 1rem; border: 0; background: #3658b7; color: white; cursor: pointer; }"""
+STARTER_JS = """document.querySelector("#hello-button")?.addEventListener("click", () => {
+  document.querySelector("#message").textContent = "Votre aperçu fonctionne.";
+});"""
 
 
 def health_snapshot(status: str, age_seconds: float | None = None) -> dict:
@@ -60,6 +86,23 @@ def health_snapshot(status: str, age_seconds: float | None = None) -> dict:
         "description": description,
         "age_seconds": age_seconds,
     }
+
+
+async def send_notification_email(
+    request: Request,
+    recipient: str,
+    subject: str,
+    body: str,
+) -> str:
+    settings: EmailSettings = request.app.state.email_settings
+    if not settings.enabled:
+        return "not-configured"
+    try:
+        await asyncio.to_thread(send_email, settings, recipient, subject, body)
+    except (OSError, smtplib.SMTPException, ValueError):
+        logger.exception("Échec de l’envoi d’un e-mail de notification.")
+        return "failed"
+    return "sent"
 
 
 async def fetch_application_health(
@@ -133,6 +176,64 @@ async def fetch_application_health(
             else:
                 health[service_name] = health_snapshot("healthy", age_seconds)
     return health
+
+
+async def fetch_application_telemetry_status(
+    service_name: str,
+    prometheus_url: str,
+) -> dict[str, bool | str | None]:
+    metric_queries = {
+        "http": f'count(stagiaires_app_requests_total{{service_name="{service_name}"}}) or vector(0)',
+        "heartbeat": f'count(stagiaires_app_heartbeat_timestamp_seconds{{service_name="{service_name}"}}) or vector(0)',
+        "sql": f'count(stagiaires_db_queries_total{{service_name="{service_name}"}}) or vector(0)',
+        "jobs": (
+            "count({__name__=~"
+            f'"stagiaires_job_queue_depth|stagiaires_job_duration_seconds_bucket",'
+            f'service_name="{service_name}"}}) or vector(0)'
+        ),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            responses = await asyncio.gather(
+                *(
+                    client.get(
+                        f"{prometheus_url}/api/v1/query",
+                        params={"query": query},
+                    )
+                    for query in metric_queries.values()
+                )
+            )
+            results = {}
+            for name, response in zip(metric_queries, responses):
+                response.raise_for_status()
+                payload = response.json()
+                samples = payload.get("data", {}).get("result")
+                if payload.get("status") != "success" or not isinstance(samples, list):
+                    raise ValueError("Réponse Prometheus invalide.")
+                results[name] = bool(
+                    samples
+                    and isinstance(samples[0].get("value"), list)
+                    and len(samples[0]["value"]) > 1
+                    and float(samples[0]["value"][1]) > 0
+                )
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        logger.warning(
+            "Impossible de vérifier les métriques de %s dans Prometheus.",
+            service_name,
+            exc_info=True,
+        )
+        return {
+            "status": "unknown",
+            "http": None,
+            "heartbeat": None,
+            "sql": None,
+            "jobs": None,
+        }
+
+    results["status"] = (
+        "connected" if results["http"] and results["heartbeat"] else "incomplete"
+    )
+    return results
 
 
 def get_current_user(
@@ -487,7 +588,28 @@ async def password_change(
         raise HTTPException(status_code=401, detail="Connexion requise.")
     active_user.password_hash = hash_password(new_password)
     session.commit()
-    return redirect(request, "/applications", "Mot de passe modifié.")
+    email_status = await send_notification_email(
+        request,
+        active_user.email,
+        "Modification du mot de passe du portail",
+        (
+            f"Bonjour {active_user.name},\n\n"
+            "Le mot de passe de votre compte sur le portail des applications stagiaires "
+            "vient d’être modifié.\n"
+            f"Accès au portail : {request.app.state.email_settings.portal_url}\n\n"
+            "Si vous n’êtes pas à l’origine de cette modification, contactez "
+            "immédiatement votre administrateur."
+        ),
+    )
+    if email_status == "sent":
+        message = "Mot de passe modifié. Avis de sécurité envoyé par e-mail."
+    elif email_status == "not-configured":
+        message = "Mot de passe modifié."
+        message += " Avis par e-mail non envoyé : le serveur SMTP n’est pas configuré."
+    else:
+        message = "Mot de passe modifié."
+        message += " L’avis par e-mail n’a pas pu être envoyé; consultez les journaux."
+    return redirect(request, "/applications", message)
 
 
 @router.get("/applications", include_in_schema=False)
@@ -715,7 +837,11 @@ async def application_create(
             error="Le nom de service est déjà enregistré. Rechargez la page et réessayez.",
             status_code=409,
         )
-    return redirect(request, f"/applications/{application.id}", "Application enregistrée.")
+    return redirect(
+        request,
+        f"/applications/{application.id}",
+        "Application enregistrée. Configurez son export OpenTelemetry sur cette fiche.",
+    )
 
 
 @router.get("/applications/{application_id}", include_in_schema=False)
@@ -747,12 +873,216 @@ async def application_detail(
             "current_user": user,
             "application": application,
             "health": health,
+            "otel_docker_endpoint": "http://portal-otel-gateway:4317",
+            "otel_host_endpoint": "http://localhost:4317",
             "history_entries": history_entries,
             "can_edit": user.role == "admin"
             or (user.role == "stagiaire" and application.owner_id == user.id),
+            "code_studio_url": f"/applications/{application.id}/studio",
             "page_title": application.name,
         },
     )
+
+
+@router.get("/applications/{application_id}/studio", include_in_schema=False)
+async def application_code_studio(
+    application_id: int,
+    request: Request,
+    session: Session = Depends(get_database),
+    user: User = Depends(get_current_user),
+):
+    require_writer(user)
+    application = get_visible_application(session, application_id, user)
+    if application.archived:
+        raise HTTPException(
+            status_code=409,
+            detail="Réactivez cette application avant de modifier son code.",
+        )
+    code = (
+        session.query(ApplicationCode)
+        .filter(ApplicationCode.application_id == application.id)
+        .one_or_none()
+    )
+    return render(
+        request,
+        "application_studio.html",
+        {
+            "current_user": user,
+            "application": application,
+            "html_code": code.html_code if code else STARTER_HTML,
+            "css_code": code.css_code if code else STARTER_CSS,
+            "js_code": code.js_code if code else STARTER_JS,
+            "code_revision": code.revision if code else 0,
+            "code_updated_at": code.updated_at if code else None,
+            "code_updated_by": code.updated_by_id if code else None,
+            "code_error": None,
+            "page_title": f"Atelier de code · {application.name}",
+        },
+    )
+
+
+@router.post(
+    "/applications/{application_id}/studio",
+    include_in_schema=False,
+)
+async def save_application_code(
+    application_id: int,
+    request: Request,
+    session: Session = Depends(get_database),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+    html_code: str = Form(default=""),
+    css_code: str = Form(default=""),
+    js_code: str = Form(default=""),
+    revision: int = Form(default=0, ge=0),
+):
+    require_writer(user)
+    application = get_visible_application(session, application_id, user)
+    if application.archived:
+        raise HTTPException(
+            status_code=409,
+            detail="Réactivez cette application avant de modifier son code.",
+        )
+
+    current = (
+        session.query(ApplicationCode)
+        .filter(ApplicationCode.application_id == application.id)
+        .one_or_none()
+    )
+    current_revision = current.revision if current else 0
+    values = {
+        "html_code": html_code,
+        "css_code": css_code,
+        "js_code": js_code,
+    }
+    error = None
+    if any(len(value) > MAX_CODE_LENGTH for value in values.values()):
+        error = (
+            "Chaque fichier est limité à 20 000 caractères. "
+            "Réduisez son contenu puis réessayez."
+        )
+    elif revision != current_revision:
+        error = (
+            "Une version plus récente a été enregistrée depuis l’ouverture "
+            "de cet atelier. Copiez vos changements, rechargez la page et "
+            "fusionnez-les avant de réessayer."
+        )
+
+    if error:
+        return render(
+            request,
+            "application_studio.html",
+            {
+                "current_user": user,
+                "application": application,
+                **values,
+                "code_revision": revision,
+                "code_updated_at": current.updated_at if current else None,
+                "code_updated_by": current.updated_by_id if current else None,
+                "code_error": error,
+                "page_title": f"Atelier de code · {application.name}",
+            },
+            status_code=409 if revision != current_revision else 422,
+        )
+
+    def conflict_response(message: str):
+        latest = (
+            session.query(ApplicationCode)
+            .filter(ApplicationCode.application_id == application.id)
+            .one_or_none()
+        )
+        return render(
+            request,
+            "application_studio.html",
+            {
+                "current_user": user,
+                "application": application,
+                **values,
+                "code_revision": revision,
+                "code_updated_at": latest.updated_at if latest else None,
+                "code_updated_by": latest.updated_by_id if latest else None,
+                "code_error": message,
+                "page_title": f"Atelier de code · {application.name}",
+            },
+            status_code=409,
+        )
+
+    if current is None:
+        current = ApplicationCode(application_id=application.id)
+        current.html_code = html_code
+        current.css_code = css_code
+        current.js_code = js_code
+        current.revision = 1
+        current.updated_by_id = user.id
+        session.add(current)
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            return conflict_response(
+                "Une autre personne a enregistré une première version "
+                "pendant votre modification. Copiez vos changements, "
+                "rechargez la page et fusionnez-les avant de réessayer."
+            )
+    else:
+        updated = (
+            session.query(ApplicationCode)
+            .filter(
+                ApplicationCode.application_id == application.id,
+                ApplicationCode.revision == revision,
+            )
+            .update(
+                {
+                    ApplicationCode.html_code: html_code,
+                    ApplicationCode.css_code: css_code,
+                    ApplicationCode.js_code: js_code,
+                    ApplicationCode.revision: revision + 1,
+                    ApplicationCode.updated_by_id: user.id,
+                },
+                synchronize_session=False,
+            )
+        )
+        if updated != 1:
+            session.rollback()
+            return conflict_response(
+                "Une version plus récente a été enregistrée depuis l’ouverture "
+                "de cet atelier. Copiez vos changements, rechargez la page et "
+                "fusionnez-les avant de réessayer."
+            )
+        session.commit()
+    return redirect(
+        request,
+        f"/applications/{application.id}/studio",
+        f"Version {revision + 1} enregistrée. L’aperçu a été actualisé.",
+    )
+
+
+@router.get(
+    "/applications/{application_id}/preview",
+    include_in_schema=False,
+)
+async def application_code_preview(
+    application_id: int,
+    session: Session = Depends(get_database),
+    user: User = Depends(get_current_user),
+):
+    application = get_visible_application(session, application_id, user)
+    code = (
+        session.query(ApplicationCode)
+        .filter(ApplicationCode.application_id == application.id)
+        .one_or_none()
+    )
+    html_code = code.html_code if code else STARTER_HTML
+    css_code = code.css_code if code else STARTER_CSS
+    js_code = code.js_code if code else STARTER_JS
+    document = (
+        "<!doctype html><html lang=\"fr\"><head>"
+        "<meta charset=\"utf-8\"><meta name=\"viewport\" "
+        "content=\"width=device-width, initial-scale=1\">"
+        f"<style>{css_code}</style></head><body>{html_code}"
+        f"<script>{js_code}</script></body></html>"
+    )
+    return HTMLResponse(document)
 
 
 @router.get("/applications/{application_id}/health", include_in_schema=False)
@@ -770,6 +1100,58 @@ async def application_health(
         )
     )[application.service_name]
     return JSONResponse(health)
+
+
+@router.post(
+    "/applications/{application_id}/telemetry/check",
+    include_in_schema=False,
+)
+async def application_telemetry_check(
+    application_id: int,
+    request: Request,
+    session: Session = Depends(get_database),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+):
+    application = get_visible_application(session, application_id, user)
+    status = await fetch_application_telemetry_status(
+        application.service_name,
+        request.app.state.prometheus_url,
+    )
+    if status["status"] == "unknown":
+        message = "Vérification impossible : Prometheus ne répond pas."
+    else:
+        def signal(
+            label: str,
+            key: str,
+            received: str,
+            missing: str,
+        ) -> str:
+            return f"{label} {received if status[key] else missing}"
+
+        message = (
+            "Raccordement vérifié — "
+            + ", ".join(
+                (
+                    signal("métriques HTTP", "http", "reçues", "absentes"),
+                    signal("battement", "heartbeat", "reçu", "absent"),
+                    signal("métriques SQL", "sql", "reçues", "absentes"),
+                    signal("métriques de files", "jobs", "reçues", "absentes"),
+                )
+            )
+            + ". Alertes Slack "
+            + (
+                "configurées au niveau de la plateforme."
+                if request.app.state.slack_alerts_enabled
+                else "non configurées : ajoutez le webhook dans SLACK_WEBHOOK_URL."
+            )
+        )
+        if status["status"] == "incomplete":
+            message += (
+                " Pour émettre les métriques manquantes, activez l'instrumentation "
+                "OpenTelemetry dans le code et le déploiement de cette application."
+            )
+    return redirect(request, f"/applications/{application.id}", message)
 
 
 @router.get("/applications/{application_id}/edit", include_in_schema=False)
@@ -992,7 +1374,28 @@ async def user_create(
             },
             status_code=409,
         )
-    return redirect(request, "/users", f"Compte créé pour {new_user.name}.")
+    email_status = await send_notification_email(
+        request,
+        new_user.email,
+        "Bienvenue sur le portail des applications stagiaires",
+        (
+        f"Bonjour {new_user.name},\n\n"
+        "Votre compte sur le portail des applications stagiaires a été créé.\n"
+        f"Adresse de connexion : {new_user.email}\n"
+        f"Accès au portail : {request.app.state.email_settings.portal_url}\n\n"
+        "Pour votre sécurité, votre mot de passe n’est pas inclus dans cet e-mail. "
+        "Contactez votre administrateur pour obtenir vos instructions de connexion."
+        ),
+    )
+    if email_status == "sent":
+        message = f"Compte créé pour {new_user.name}. E-mail de bienvenue envoyé."
+    elif email_status == "not-configured":
+        message = f"Compte créé pour {new_user.name}."
+        message += " Notification non envoyée : le serveur SMTP n’est pas configuré."
+    else:
+        message = f"Compte créé pour {new_user.name}."
+        message += " L’e-mail de bienvenue n’a pas pu être envoyé; consultez les journaux."
+    return redirect(request, "/users", message)
 
 
 @router.post("/users/{user_id}/toggle", include_in_schema=False)

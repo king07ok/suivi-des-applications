@@ -74,11 +74,11 @@ FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider)
 @app.middleware("http")
 async def record_application_metrics(request, call_next):
     started = time.perf_counter()
-    route = request.scope.get("route")
-    route_name = getattr(route, "path", request.url.path)
     try:
         response = await call_next(request)
     except Exception:
+        route = request.scope.get("route")
+        route_name = getattr(route, "path", "unmatched")
         attributes = {
             "route": route_name,
             "status_code": "500",
@@ -89,6 +89,8 @@ async def record_application_metrics(request, call_next):
         )
         raise
 
+    route = request.scope.get("route")
+    route_name = getattr(route, "path", "unmatched")
     attributes = {
         "route": route_name,
         "status_code": str(response.status_code),

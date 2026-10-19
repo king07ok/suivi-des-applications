@@ -19,6 +19,9 @@
     </form>
     {% endif %}
     <a class="button button-primary" href="/grafana/d/stagiaires-applications/applications-stagiaires?var-application={{ application.service_name|urlencode }}" target="_blank" rel="noopener">Ouvrir Grafana <span aria-hidden="true">↗</span></a>
+    {% if can_edit and not application.archived %}
+    <a class="button button-secondary" href="{{ code_studio_url }}">Atelier de code</a>
+    {% endif %}
   </div>
 </div>
 <div class="detail-layout">
@@ -46,6 +49,36 @@
         <p class="dashboard-access-note">L’affichage intégré requiert une session Grafana. Si le tableau de bord ne s’affiche pas, ouvrez-le séparément puis connectez-vous.</p>
         <a class="text-link" href="/grafana/d/stagiaires-applications/applications-stagiaires?var-application={{ application.service_name|urlencode }}" target="_blank" rel="noopener">Ouvrir le tableau de bord dans Grafana <span aria-hidden="true">↗</span></a>
       </div>
+      <section class="telemetry-onboarding" aria-labelledby="telemetry-onboarding-title">
+        <h3 id="telemetry-onboarding-title">Activer l’export pour cette application</h3>
+        <p>Le Collector accepte automatiquement les nouvelles applications. Ajoutez ces variables au conteneur du service, puis activez l’instrumentation OpenTelemetry des métriques et des journaux dans son SDK. Le nom de service est déjà associé à cette fiche et au filtre Grafana.</p>
+        <form class="telemetry-check-form" method="post" action="/applications/{{ application.id }}/telemetry/check">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button button-secondary" type="submit">Vérifier le raccordement</button>
+          <span>Contrôle les signaux déjà reçus et l’état Slack de la plateforme; n’installe pas de SDK à distance.</span>
+        </form>
+        <div class="telemetry-config">
+          <strong>Application dans Docker (réseau du portail)</strong>
+          <pre><code>OTEL_SERVICE_NAME={{ application.service_name }}
+OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_docker_endpoint }}
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+OTEL_TRACES_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp
+OTEL_RESOURCE_ATTRIBUTES=service.namespace=stagiaires,deployment.environment.name=local</code></pre>
+        </div>
+        <details class="telemetry-host-config">
+          <summary>Application exécutée directement sur cette machine</summary>
+          <pre><code>OTEL_SERVICE_NAME={{ application.service_name }}
+OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_host_endpoint }}
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+OTEL_TRACES_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp
+OTEL_RESOURCE_ATTRIBUTES=service.namespace=stagiaires,deployment.environment.name=local</code></pre>
+        </details>
+        <p class="telemetry-activation-note">L’enregistrement de la fiche ne peut pas modifier le code ni l’environnement d’un dépôt applicatif. Après l’ajout de ces variables et de l’instrumentation SDK, les métriques, journaux et traces seront collectés automatiquement, sans nouvelle configuration du Collector. Les alertes Slack sont partagées au niveau de la plateforme : les règles Prometheus existantes s’appliquent automatiquement aux services instrumentés.</p>
+      </section>
     </section>
   </div>
   <aside class="history-rail">
