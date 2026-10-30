@@ -291,6 +291,8 @@ class PortalIntegrationTests(unittest.TestCase):
         detail = self.client.get("/applications/1")
         self.assertEqual(detail.status_code, 200)
         self.assertIn("test-api", detail.text)
+        self.assertIn('href="/prometheus/"', detail.text)
+        self.assertIn('href="https://slack.com"', detail.text)
         self.assertIn("Fiche créée", detail.text)
         self.assertIn('data-health-status="no-data"', detail.text)
         self.assertIn("/grafana/d/stagiaires-applications/suivi-des-applications", detail.text)
@@ -587,6 +589,8 @@ class PortalIntegrationTests(unittest.TestCase):
         visible = intern_client.get("/applications")
         self.assertIn("test-api", visible.text)
         self.assertIn("other-api", visible.text)
+        self.assertIn('href="/prometheus/"', visible.text)
+        self.assertIn('href="https://slack.com"', visible.text)
         self.assertIn("/applications/export.csv?", visible.text)
         self.assertIn('name="owner_id"', visible.text)
         self.assertEqual(
