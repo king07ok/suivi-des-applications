@@ -33,8 +33,8 @@
         <div class="detail-field"><dt>Langage</dt><dd>{{ application.language or 'Non renseigné' }}</dd></div>
         <div class="detail-field"><dt>Version</dt><dd>{{ application.version or 'Non renseignée' }}</dd></div>
         <div class="detail-field"><dt>Dépôt Git</dt><dd>{% if application.repository_url %}<a class="text-link" href="{{ application.repository_url }}" target="_blank" rel="noopener noreferrer">{{ application.repository_url }} <span aria-hidden="true">↗</span></a>{% else %}Non renseigné{% endif %}</dd></div>
-        <div class="detail-field"><dt>Début du stage</dt><dd>{{ application.internship_start.strftime('%d/%m/%Y') if application.internship_start else 'Non renseigné' }}</dd></div>
-        <div class="detail-field"><dt>Fin du stage</dt><dd>{{ application.internship_end.strftime('%d/%m/%Y') if application.internship_end else 'Non renseignée' }}</dd></div>
+        <div class="detail-field"><dt>Date de début du projet</dt><dd>{{ application.internship_start.strftime('%d/%m/%Y') if application.internship_start else 'Non renseignée' }}</dd></div>
+        <div class="detail-field"><dt>Date de déploiement du projet</dt><dd>{{ application.internship_end.strftime('%d/%m/%Y') if application.internship_end else 'Non renseignée' }}</dd></div>
         <div class="detail-field detail-field-wide"><dt>Description</dt><dd class="description-copy">{{ application.description or 'Aucune description n’a été ajoutée.' }}</dd></div>
       </dl>
     </section>

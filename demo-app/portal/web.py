@@ -481,12 +481,12 @@ def validate_application(
     if len(values["language"]) > 40 or len(values["version"]) > 80:
         return values, "Le langage est limité à 40 caractères et la version à 80."
     try:
-        start = parse_date(values["internship_start"], "début du stage")
-        end = parse_date(values["internship_end"], "fin du stage")
+        start = parse_date(values["internship_start"], "début du projet")
+        end = parse_date(values["internship_end"], "déploiement du projet")
     except ValueError as error:
         return values, str(error)
     if start and end and end < start:
-        return values, "La fin du stage doit être postérieure ou égale à son début."
+        return values, "La date de déploiement doit être postérieure ou égale au début du projet."
     values["_start"] = start
     values["_end"] = end
     return values, None
@@ -774,8 +774,8 @@ async def application_export(
             "Langage",
             "Version",
             "Dépôt Git",
-            "Début du stage",
-            "Fin du stage",
+            "Début du projet",
+            "Déploiement du projet",
             "Archivage",
         ]
     )

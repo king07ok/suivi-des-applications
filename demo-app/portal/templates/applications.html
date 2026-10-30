@@ -40,11 +40,11 @@ FORM: Opérations, candidat de composition 3 (registre + marge de repères), mon
         {% for owner in owners %}<option value="{{ owner.id }}" {% if filters.owner_id == owner.id|string %}selected{% endif %}>{{ owner.name }}</option>{% endfor %}
       </select></label>
       {% endif %}
-      <label class="filter-select filter-period"><span class="sr-only">Période de stage</span><select name="period">
-        <option value="all" {% if filters.period == 'all' %}selected{% endif %}>Toutes périodes</option>
-        <option value="current" {% if filters.period == 'current' %}selected{% endif %}>Stages en cours</option>
-        <option value="future" {% if filters.period == 'future' %}selected{% endif %}>À venir</option>
-        <option value="ended" {% if filters.period == 'ended' %}selected{% endif %}>Terminés</option>
+      <label class="filter-select filter-period"><span class="sr-only">Avancement du projet</span><select name="period">
+        <option value="all" {% if filters.period == 'all' %}selected{% endif %}>Tous les projets</option>
+        <option value="current" {% if filters.period == 'current' %}selected{% endif %}>Projets en cours</option>
+        <option value="future" {% if filters.period == 'future' %}selected{% endif %}>Déploiement à venir</option>
+        <option value="ended" {% if filters.period == 'ended' %}selected{% endif %}>Projets déployés</option>
       </select></label>
       <label class="filter-select filter-health"><span class="sr-only">Santé du service</span><select name="health">
         <option value="all" {% if filters.health == 'all' %}selected{% endif %}>Toutes les santés</option>
@@ -59,7 +59,7 @@ FORM: Opérations, candidat de composition 3 (registre + marge de repères), mon
     </form>
     <div class="table-wrap">
       <table class="applications-table">
-        <thead><tr><th scope="col">APPLICATION / SERVICE</th><th scope="col">RESPONSABLE</th><th scope="col">VERSION</th><th scope="col">PÉRIODE DE STAGE</th><th scope="col"><span class="sr-only">Détail</span></th></tr></thead>
+        <thead><tr><th scope="col">APPLICATION / SERVICE</th><th scope="col">RESPONSABLE</th><th scope="col">VERSION</th><th scope="col">DATES DU PROJET</th><th scope="col"><span class="sr-only">Détail</span></th></tr></thead>
         <tbody>
         {% for application in applications %}
           <tr>
@@ -71,7 +71,7 @@ FORM: Opérations, candidat de composition 3 (registre + marge de repères), mon
             </td>
             <td data-label="Responsable"><span class="owner-cell"><span class="avatar avatar-small" aria-hidden="true">{{ application.owner.name[:1]|upper }}</span>{{ application.owner.name }}</span></td>
             <td data-label="Version"><span class="version-cell">{{ application.version or '—' }}</span></td>
-            <td data-label="Période de stage"><span class="date-cell">{% if application.internship_start %}{{ application.internship_start.strftime('%d/%m/%Y') }}{% else %}—{% endif %}<span aria-hidden="true"> → </span>{% if application.internship_end %}{{ application.internship_end.strftime('%d/%m/%Y') }}{% else %}—{% endif %}</span></td>
+            <td data-label="Dates du projet"><span class="date-cell"><span class="date-label">Début :</span> {% if application.internship_start %}{{ application.internship_start.strftime('%d/%m/%Y') }}{% else %}—{% endif %}<br><span class="date-label">Déploiement :</span> {% if application.internship_end %}{{ application.internship_end.strftime('%d/%m/%Y') }}{% else %}—{% endif %}</span></td>
             <td class="row-action"><a class="row-arrow" href="/applications/{{ application.id }}" aria-label="Ouvrir la fiche de {{ application.name }}">↗</a></td>
           </tr>
         {% else %}

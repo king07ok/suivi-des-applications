@@ -766,6 +766,12 @@ p {
 }
 
 .date-cell {
+  line-height: 1.8;
+}
+
+.date-cell .date-label {
+  font-variant-numeric: normal;
+  font-weight: 600;
   white-space: nowrap;
 }
 

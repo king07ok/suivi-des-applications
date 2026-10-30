@@ -291,6 +291,8 @@ class PortalIntegrationTests(unittest.TestCase):
         detail = self.client.get("/applications/1")
         self.assertEqual(detail.status_code, 200)
         self.assertIn("test-api", detail.text)
+        self.assertIn("Date de début du projet", detail.text)
+        self.assertIn("Date de déploiement du projet", detail.text)
         self.assertIn('href="/prometheus/"', detail.text)
         self.assertIn('href="https://slack.com"', detail.text)
         self.assertIn("Fiche créée", detail.text)
@@ -326,6 +328,8 @@ class PortalIntegrationTests(unittest.TestCase):
         self.assertEqual(health.json()["status"], "no-data")
 
         edit_page = self.client.get("/applications/1/edit")
+        self.assertIn('value="2026-01-01"', edit_page.text)
+        self.assertIn('value="2026-12-31"', edit_page.text)
         edit = self.client.post(
             "/applications/1/edit",
             data={

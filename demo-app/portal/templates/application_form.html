@@ -47,7 +47,7 @@
     </div>
   </fieldset>
   <fieldset>
-    <legend><span class="legend-number">02</span> Responsable et période de stage</legend>
+    <legend><span class="legend-number">02</span> Responsable et dates du projet</legend>
     <div class="form-grid">
       {% if current_user.role in ['admin', 'moniteur'] %}
       <div class="field-group field-wide">
@@ -67,11 +67,11 @@
       </div>
       {% endif %}
       <div class="field-group">
-        <label for="internship_start">Début du stage</label>
+        <label for="internship_start">Date de début du projet</label>
         <input id="internship_start" name="internship_start" type="date" value="{{ values.internship_start }}">
       </div>
       <div class="field-group">
-        <label for="internship_end">Fin du stage</label>
+        <label for="internship_end">Date de déploiement du projet</label>
         <input id="internship_end" name="internship_end" type="date" value="{{ values.internship_end }}">
       </div>
     </div>

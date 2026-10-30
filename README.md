@@ -74,9 +74,10 @@ Les métriques applicatives sont exportées périodiquement ; attendez jusqu'à
 
 Le portail redirige les visiteurs non connectés vers la page de connexion.
 Dans **Applications**, les comptes autorisés peuvent rechercher et filtrer les
-fiches par nom, service, responsable, état d'archivage et période de stage.
+fiches par nom, service, responsable, état d'archivage et avancement du projet.
 Une fiche contient le nom du service OpenTelemetry, la description, le langage,
-le dépôt Git, la version, le responsable et les dates de stage; elle conserve
+le dépôt Git, la version, le responsable, la date de début du projet et sa date
+de déploiement; elle conserve
 également un historique des modifications. Les fiches sont archivées, et non
 supprimées.
 
