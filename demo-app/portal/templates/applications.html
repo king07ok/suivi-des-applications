@@ -3,7 +3,7 @@
 <!--
 THESIS: Relier la fiche, le responsable et le signal OpenTelemetry, plutôt que de faire de Grafana tout le portail.
 OWN-WORLD: Registre de permanence sur papier froid : fond brume, encre ardoise, règles fines, tabulaire aligné; bleu pour agir, ambre/rouge uniquement pour le statut réel.
-STORY: L'encadrant retrouve un service, identifie son responsable puis ouvre les signaux; le stagiaire ne voit que ses fiches.
+STORY: Le Moniteur retrouve un service, identifie son responsable puis ouvre les signaux.
 FIRST VIEWPORT: Barre de titre et ajout en haut; filtres et compteurs compacts; registre tabulaire à gauche et rail de changements à droite sur grand écran.
 FORM: Opérations, candidat de composition 3 (registre + marge de repères), monde candidat 6 (carnet de relève technique), seed surface 783f3899, direction 6bf8e78b; navigation habituelle en rail latéral.
 -->
@@ -13,7 +13,7 @@ FORM: Opérations, candidat de composition 3 (registre + marge de repères), mon
     <h1>Applications suivies</h1>
     <p class="page-lede">Un point de repère pour chaque service développé pendant un stage.</p>
   </div>
-  {% if current_user.role in ['admin', 'stagiaire'] %}
+  {% if current_user.role in ['admin', 'moniteur'] %}
   <a class="button button-primary" href="/applications/new"><span aria-hidden="true">＋</span> Ajouter une application</a>
   {% endif %}
 </div>
@@ -34,10 +34,10 @@ FORM: Opérations, candidat de composition 3 (registre + marge de repères), mon
         <option value="archived" {% if filters.status == 'archived' %}selected{% endif %}>Archivées</option>
         <option value="all" {% if filters.status == 'all' %}selected{% endif %}>Toutes</option>
       </select></label>
-      {% if current_user.role == 'admin' %}
+      {% if current_user.role in ['admin', 'moniteur'] %}
       <label class="filter-select"><span class="sr-only">Responsable</span><select name="owner_id">
-        <option value="">Tous les stagiaires</option>
-        {% for intern in interns %}<option value="{{ intern.id }}" {% if filters.owner_id == intern.id|string %}selected{% endif %}>{{ intern.name }}</option>{% endfor %}
+        <option value="">Tous les analystes</option>
+        {% for owner in owners %}<option value="{{ owner.id }}" {% if filters.owner_id == owner.id|string %}selected{% endif %}>{{ owner.name }}</option>{% endfor %}
       </select></label>
       {% endif %}
       <label class="filter-select filter-period"><span class="sr-only">Période de stage</span><select name="period">
@@ -75,7 +75,7 @@ FORM: Opérations, candidat de composition 3 (registre + marge de repères), mon
             <td class="row-action"><a class="row-arrow" href="/applications/{{ application.id }}" aria-label="Ouvrir la fiche de {{ application.name }}">↗</a></td>
           </tr>
         {% else %}
-          <tr><td colspan="5"><div class="empty-state"><span class="empty-rule"></span><h2>Aucune application dans ce registre</h2><p>{% if filters.q %}Essayez une autre recherche ou retirez un filtre.{% else %}Ajoutez une application pour commencer le suivi de ses informations.{% endif %}</p>{% if current_user.role in ['admin', 'stagiaire'] and not filters.q %}<a class="button button-secondary" href="/applications/new">Créer la première fiche</a>{% endif %}</div></td></tr>
+          <tr><td colspan="5"><div class="empty-state"><span class="empty-rule"></span><h2>Aucune application dans ce registre</h2><p>{% if filters.q %}Essayez une autre recherche ou retirez un filtre.{% else %}Ajoutez une application pour commencer le suivi de ses informations.{% endif %}</p>{% if current_user.role in ['admin', 'moniteur'] and not filters.q %}<a class="button button-secondary" href="/applications/new">Créer la première fiche</a>{% endif %}</div></td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -91,7 +91,7 @@ FORM: Opérations, candidat de composition 3 (registre + marge de repères), mon
     </div>
     <div class="aside-section">
       <h2>VOTRE PÉRIMÈTRE</h2>
-      <p>{% if current_user.role == 'admin' %}Vue administrateur · tous les responsables{% elif current_user.role == 'stagiaire' %}Vos fiches · vous êtes responsable{% else %}Lecture seule · registre partagé{% endif %}</p>
+      <p>{% if current_user.role == 'admin' %}Vue Admin · tous les responsables{% else %}Vue Moniteur · tous les responsables{% endif %}</p>
       {% if current_user.role == 'admin' %}<a class="text-link" href="/users">Gérer les comptes <span aria-hidden="true">→</span></a>{% endif %}
     </div>
     <div class="aside-footer"><span class="aside-stamp">LOCAL</span><span>COLLECTEUR OTLP<br>4317 · 4318</span></div>

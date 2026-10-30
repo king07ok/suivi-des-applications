@@ -1,6 +1,6 @@
 {
   "uid": "stagiaires-applications",
-  "title": "Applications stagiaires",
+  "title": "Suivi des applications",
   "description": "Vue réutilisable de l'activité, de la disponibilité, des erreurs, de la latence et des journaux.",
   "tags": [
     "stagiaires",

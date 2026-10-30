@@ -18,7 +18,7 @@
       <button class="button button-quiet" type="submit">{% if application.archived %}Réactiver{% else %}Archiver{% endif %}</button>
     </form>
     {% endif %}
-    <a class="button button-primary" href="/grafana/d/stagiaires-applications/applications-stagiaires?var-application={{ application.service_name|urlencode }}" target="_blank" rel="noopener">Ouvrir Grafana <span aria-hidden="true">↗</span></a>
+    <a class="button button-primary" href="/grafana/d/stagiaires-applications/suivi-des-applications?var-application={{ application.service_name|urlencode }}" target="_blank" rel="noopener">Ouvrir Grafana <span aria-hidden="true">↗</span></a>
     {% if can_edit and not application.archived %}
     <a class="button button-secondary" href="{{ code_studio_url }}">Atelier de code</a>
     {% endif %}
@@ -44,10 +44,10 @@
         <div class="telemetry-id"><span class="telemetry-icon" aria-hidden="true">⌁</span><div><strong>{{ application.service_name }}</strong><small data-health-age>{% if health.age_seconds is not none %}Dernier battement reçu il y a {{ health.age_seconds|round|int }} s{% else %}Mesure calculée à partir des battements OpenTelemetry{% endif %}</small></div></div>
         <p>Les graphiques ci-dessous suivent ce service. Le statut est recalculé toutes les 30 secondes à partir du dernier battement reçu par Prometheus.</p>
         <div class="embedded-dashboard">
-          <iframe src="/grafana/d/stagiaires-applications/applications-stagiaires?var-application={{ application.service_name|urlencode }}&amp;from=now-1h&amp;to=now&amp;refresh=30s" title="Tableau de bord Grafana pour {{ application.name }}" loading="lazy" referrerpolicy="same-origin"></iframe>
+          <iframe src="/grafana/d/stagiaires-applications/suivi-des-applications?var-application={{ application.service_name|urlencode }}&amp;from=now-1h&amp;to=now&amp;refresh=30s" title="Tableau de bord Grafana pour {{ application.name }}" loading="lazy" referrerpolicy="same-origin"></iframe>
         </div>
         <p class="dashboard-access-note">L’affichage intégré requiert une session Grafana. Si le tableau de bord ne s’affiche pas, ouvrez-le séparément puis connectez-vous.</p>
-        <a class="text-link" href="/grafana/d/stagiaires-applications/applications-stagiaires?var-application={{ application.service_name|urlencode }}" target="_blank" rel="noopener">Ouvrir le tableau de bord dans Grafana <span aria-hidden="true">↗</span></a>
+        <a class="text-link" href="/grafana/d/stagiaires-applications/suivi-des-applications?var-application={{ application.service_name|urlencode }}" target="_blank" rel="noopener">Ouvrir le tableau de bord dans Grafana <span aria-hidden="true">↗</span></a>
       </div>
       <section class="telemetry-onboarding" aria-labelledby="telemetry-onboarding-title">
         <h3 id="telemetry-onboarding-title">Activer l’export pour cette application</h3>

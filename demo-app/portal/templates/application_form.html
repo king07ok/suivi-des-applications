@@ -49,20 +49,20 @@
   <fieldset>
     <legend><span class="legend-number">02</span> Responsable et période de stage</legend>
     <div class="form-grid">
-      {% if current_user.role == 'admin' %}
+      {% if current_user.role in ['admin', 'moniteur'] %}
       <div class="field-group field-wide">
-        <label for="owner_id">Stagiaire responsable <span class="required-mark">*</span></label>
+        <label for="owner_id">Analyste responsable <span class="required-mark">*</span></label>
         <select id="owner_id" name="owner_id" required>
-          <option value="">Sélectionner un stagiaire</option>
-          {% for intern in interns %}
-          <option value="{{ intern.id }}" {% if values.owner_id == intern.id|string %}selected{% endif %}>{{ intern.name }} · {{ intern.email }}</option>
+          <option value="">Sélectionner un responsable</option>
+          {% for owner in owners %}
+          <option value="{{ owner.id }}" {% if values.owner_id == owner.id|string %}selected{% endif %}>{{ owner.name }} · {{ role_labels[owner.role] }}</option>
           {% endfor %}
         </select>
-        {% if not interns %}<small>Créez d’abord un compte avec le rôle Stagiaire dans la rubrique Comptes.</small>{% endif %}
+        {% if not owners %}<small>Créez d’abord un compte Admin ou Moniteur dans la rubrique Comptes.</small>{% endif %}
       </div>
       {% else %}
       <div class="field-group field-wide">
-        <label>Stagiaire responsable</label>
+        <label>Analyste responsable</label>
         <div class="readonly-field"><span class="avatar avatar-small" aria-hidden="true">{{ current_user.name[:1]|upper }}</span>{{ current_user.name }} <span class="readonly-note">Votre compte</span></div>
       </div>
       {% endif %}

@@ -9,12 +9,14 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session as DatabaseSession
 from fastapi.testclient import TestClient
 
 from portal.app import create_app, registered_application_observations
 from portal.email import EmailSettings, send_email
-from portal.models import Application, ApplicationCode, User
-from portal.security import verify_password
+from portal.models import Application, ApplicationCode, Base, User
+from portal.security import hash_password, verify_password
 from portal.web import fetch_application_health, health_snapshot
 
 
@@ -65,7 +67,13 @@ class PortalIntegrationTests(unittest.TestCase):
             raise AssertionError("Page does not contain a CSRF token.")
         return match.group(1)
 
-    def login(self, client=None, email=ADMIN_EMAIL, password=ADMIN_PASSWORD):
+    def login(
+        self,
+        client=None,
+        email=ADMIN_EMAIL,
+        password=ADMIN_PASSWORD,
+        follow_redirects=True,
+    ):
         client = client or self.client
         page = client.get("/login")
         response = client.post(
@@ -75,6 +83,7 @@ class PortalIntegrationTests(unittest.TestCase):
                 "email": email,
                 "password": password,
             },
+            follow_redirects=follow_redirects,
         )
         return response
 
@@ -100,7 +109,7 @@ class PortalIntegrationTests(unittest.TestCase):
         page = self.client.get("/applications/new")
         if owner_id is None:
             with self.app.state.session_factory() as session:
-                owner_id = session.query(User.id).filter(User.role == "stagiaire").scalar()
+                owner_id = session.query(User.id).filter(User.role == "moniteur").scalar()
         return self.client.post(
             "/applications/new",
             data={
@@ -133,7 +142,7 @@ class PortalIntegrationTests(unittest.TestCase):
             response = self.create_user(
                 "Stagiaire e-mail",
                 "stagiaire-mail@example.local",
-                "stagiaire",
+                "moniteur",
                 initial_password,
             )
 
@@ -152,7 +161,7 @@ class PortalIntegrationTests(unittest.TestCase):
         response = self.create_user(
             "Stagiaire sans SMTP",
             "stagiaire-sans-smtp@example.local",
-            "stagiaire",
+            "moniteur",
             "Temporary-password-2026!",
         )
         self.assertEqual(response.status_code, 200)
@@ -176,7 +185,7 @@ class PortalIntegrationTests(unittest.TestCase):
             response = self.create_user(
                 "Stagiaire SMTP indisponible",
                 "stagiaire-smtp-ko@example.local",
-                "stagiaire",
+                "moniteur",
                 "Temporary-password-2026!",
             )
 
@@ -213,14 +222,14 @@ class PortalIntegrationTests(unittest.TestCase):
         intern = self.create_user(
             "Stagiaire A",
             "stagiaire-a@example.local",
-            "stagiaire",
+            "moniteur",
             INTERN_PASSWORD,
         )
         self.assertEqual(intern.status_code, 200)
         reader = self.create_user(
             "Lecteur",
             "lecteur@example.local",
-            "lecteur",
+            "checker",
             READER_PASSWORD,
         )
         self.assertEqual(reader.status_code, 200)
@@ -267,7 +276,7 @@ class PortalIntegrationTests(unittest.TestCase):
         self.create_user(
             "Stagiaire A",
             "stagiaire-a@example.local",
-            "stagiaire",
+            "moniteur",
             INTERN_PASSWORD,
         )
         with self.app.state.session_factory() as session:
@@ -284,7 +293,7 @@ class PortalIntegrationTests(unittest.TestCase):
         self.assertIn("test-api", detail.text)
         self.assertIn("Fiche créée", detail.text)
         self.assertIn('data-health-status="no-data"', detail.text)
-        self.assertIn("/grafana/d/stagiaires-applications/applications-stagiaires", detail.text)
+        self.assertIn("/grafana/d/stagiaires-applications/suivi-des-applications", detail.text)
         self.assertIn("OTEL_SERVICE_NAME=test-api", detail.text)
         self.assertIn(
             "OTEL_EXPORTER_OTLP_ENDPOINT=http://portal-otel-gateway:4317",
@@ -340,7 +349,7 @@ class PortalIntegrationTests(unittest.TestCase):
         self.create_user(
             "Stagiaire A",
             "stagiaire-a@example.local",
-            "stagiaire",
+            "moniteur",
             INTERN_PASSWORD,
         )
         with self.app.state.session_factory() as session:
@@ -386,7 +395,7 @@ class PortalIntegrationTests(unittest.TestCase):
         self.create_user(
             "Stagiaire A",
             "stagiaire-a@example.local",
-            "stagiaire",
+            "moniteur",
             INTERN_PASSWORD,
         )
         with self.app.state.session_factory() as session:
@@ -484,12 +493,12 @@ class PortalIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(missing_csrf.status_code, 403)
 
-    def test_code_studio_enforces_application_ownership_and_reader_role(self):
+    def test_moniteur_can_edit_all_applications_and_checker_is_dashboard_only(self):
         owner_a, application_a = self.prepare_accounts_and_application()
         self.create_user(
             "Stagiaire B",
             "stagiaire-b@example.local",
-            "stagiaire",
+            "moniteur",
             "Intern-B-password-2026!",
         )
         with self.app.state.session_factory() as session:
@@ -518,24 +527,38 @@ class PortalIntegrationTests(unittest.TestCase):
             200,
         )
         self.assertEqual(intern.get(f"/applications/{application_a}/studio").status_code, 200)
-        self.assertEqual(intern.get("/applications/2/studio").status_code, 404)
-        self.assertEqual(intern.get("/applications/2/preview").status_code, 404)
+        self.assertEqual(intern.get("/applications/2/studio").status_code, 200)
+        self.assertEqual(intern.get("/applications/2/preview").status_code, 200)
+        self.assertEqual(intern.get("/users").status_code, 403)
+        self.assertEqual(intern.get("/users/new").status_code, 403)
 
         reader = TestClient(self.app)
         self.addCleanup(reader.close)
-        self.assertEqual(
-            self.login(reader, "lecteur@example.local", READER_PASSWORD).status_code,
-            200,
+        response = self.login(
+            reader,
+            "lecteur@example.local",
+            READER_PASSWORD,
+            follow_redirects=False,
         )
-        self.assertEqual(reader.get(f"/applications/{application_a}/studio").status_code, 403)
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(
+            response.headers["location"],
+            "/grafana/d/stagiaires-applications/suivi-des-applications",
+        )
+        self.assertEqual(reader.get("/applications").status_code, 403)
+        self.assertEqual(reader.get("/applications/export.csv").status_code, 403)
+        grafana_auth = reader.get("/auth/grafana")
+        self.assertEqual(grafana_auth.status_code, 200)
+        self.assertRegex(grafana_auth.headers["x-webauth-user"], r"^portal-user-\d+$")
+        self.assertEqual(reader.get("/users").status_code, 403)
         self.assertEqual(owner_a, 2)
 
-    def test_intern_can_only_view_and_edit_owned_applications(self):
+    def test_moniteur_can_view_and_edit_all_applications(self):
         owner_a, application_a = self.prepare_accounts_and_application()
         self.create_user(
             "Stagiaire B",
             "stagiaire-b@example.local",
-            "stagiaire",
+            "moniteur",
             "Intern-B-password-2026!",
         )
         with self.app.state.session_factory() as session:
@@ -563,17 +586,17 @@ class PortalIntegrationTests(unittest.TestCase):
         )
         visible = intern_client.get("/applications")
         self.assertIn("test-api", visible.text)
-        self.assertNotIn("other-api", visible.text)
+        self.assertIn("other-api", visible.text)
         self.assertIn("/applications/export.csv?", visible.text)
-        self.assertNotIn("owner_id=", visible.text)
+        self.assertIn('name="owner_id"', visible.text)
         self.assertEqual(
             intern_client.get("/applications/export.csv?status=all").status_code,
             200,
         )
         self.assertEqual(intern_client.get(f"/applications/{application_a}").status_code, 200)
-        self.assertEqual(intern_client.get("/applications/2").status_code, 404)
-        self.assertEqual(intern_client.get("/applications/2/health").status_code, 404)
-        self.assertEqual(intern_client.get("/applications/2/edit").status_code, 404)
+        self.assertEqual(intern_client.get("/applications/2").status_code, 200)
+        self.assertEqual(intern_client.get("/applications/2/health").status_code, 200)
+        self.assertEqual(intern_client.get("/applications/2/edit").status_code, 200)
         self.assertEqual(owner_a, 2)
 
     def test_registered_application_metric_excludes_archived_applications(self):
@@ -613,7 +636,7 @@ class PortalIntegrationTests(unittest.TestCase):
         intern = self.create_user(
             "Stagiaire simulation",
             "simulation@example.local",
-            "stagiaire",
+            "moniteur",
             INTERN_PASSWORD,
         )
         self.assertEqual(intern.status_code, 200)
@@ -695,19 +718,32 @@ class PortalIntegrationTests(unittest.TestCase):
             {f"simulation-site-{number:02d}" for number in range(1, 51)},
         )
 
-    def test_reader_is_read_only_and_admin_routes_are_protected(self):
+    def test_checker_cannot_access_portal_or_account_management(self):
         self.prepare_accounts_and_application()
         reader = TestClient(self.app)
         self.addCleanup(reader.close)
+        unauthenticated = TestClient(self.app)
+        self.addCleanup(unauthenticated.close)
+        auth_redirect = unauthenticated.get("/auth/grafana", follow_redirects=False)
+        self.assertEqual(auth_redirect.status_code, 303)
+        self.assertEqual(auth_redirect.headers["location"], "/login")
         self.assertEqual(
-            self.login(reader, "lecteur@example.local", READER_PASSWORD).status_code,
-            200,
+            self.login(
+                reader,
+                "lecteur@example.local",
+                READER_PASSWORD,
+                follow_redirects=False,
+            ).status_code,
+            303,
         )
-        self.assertEqual(reader.get("/applications").status_code, 200)
+        self.assertEqual(
+            reader.get("/", follow_redirects=False).headers["location"],
+            "/grafana/d/stagiaires-applications/suivi-des-applications",
+        )
+        self.assertEqual(reader.get("/applications").status_code, 403)
         self.assertEqual(reader.get("/applications/new").status_code, 403)
-        self.assertEqual(reader.get("/applications/export.csv").status_code, 200)
-        detail = reader.get("/applications/1")
-        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(reader.get("/applications/export.csv").status_code, 403)
+        self.assertEqual(reader.get("/account/password").status_code, 403)
         self.assertEqual(reader.get("/users").status_code, 403)
         self.assertEqual(reader.get("/users/new").status_code, 403)
 
@@ -716,7 +752,7 @@ class PortalIntegrationTests(unittest.TestCase):
         self.create_user(
             "Stagiaire B",
             "stagiaire-b@example.local",
-            "stagiaire",
+            "moniteur",
             "Intern-B-password-2026!",
         )
         with self.app.state.session_factory() as session:
@@ -792,9 +828,11 @@ class PortalIntegrationTests(unittest.TestCase):
                     delimiter=";",
                 )
             )
-            self.assertEqual(len(scoped_rows), 2)
-            self.assertEqual(scoped_rows[1][1], "test-api")
-            self.assertNotIn("healthy-api", scoped_export.text)
+            self.assertEqual(len(scoped_rows), 3)
+            self.assertEqual(
+                {row[1] for row in scoped_rows[1:]},
+                {"test-api", "healthy-api"},
+            )
 
     def test_csrf_validation_duplicate_service_and_archival(self):
         self.prepare_accounts_and_application()
@@ -833,7 +871,7 @@ class PortalIntegrationTests(unittest.TestCase):
         self.create_user(
             "Stagiaire à désactiver",
             "inactive@example.local",
-            "stagiaire",
+            "moniteur",
             "Inactive-password-2026!",
         )
         self.app.state.email_settings = EmailSettings(
@@ -884,6 +922,54 @@ class PortalIntegrationTests(unittest.TestCase):
             "Inactive-password-2026!",
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_startup_migrates_legacy_roles(self):
+        database_path = Path(self.temp_dir.name) / "legacy-roles.db"
+        app = create_app(
+            database_url=f"sqlite:///{database_path}",
+            session_secret_key="test-session-secret-key-with-more-than-32-bytes",
+            initial_admin={
+                "name": "Admin de migration",
+                "email": "migration-admin@example.local",
+                "password": ADMIN_PASSWORD,
+            },
+        )
+        engine = create_engine(f"sqlite:///{database_path}")
+        Base.metadata.create_all(engine)
+        with DatabaseSession(engine) as session:
+            session.add_all(
+                [
+                    User(
+                        name="Ancien stagiaire",
+                        email="legacy-monitor@example.local",
+                        password_hash=hash_password(INTERN_PASSWORD),
+                        role="stagiaire",
+                    ),
+                    User(
+                        name="Ancien lecteur",
+                        email="legacy-checker@example.local",
+                        password_hash=hash_password(READER_PASSWORD),
+                        role="lecteur",
+                    ),
+                ]
+            )
+            session.commit()
+        engine.dispose()
+
+        with TestClient(app):
+            with app.state.session_factory() as session:
+                self.assertEqual(
+                    session.query(User.role)
+                    .filter(User.email == "legacy-monitor@example.local")
+                    .scalar(),
+                    "moniteur",
+                )
+                self.assertEqual(
+                    session.query(User.role)
+                    .filter(User.email == "legacy-checker@example.local")
+                    .scalar(),
+                    "checker",
+                )
 
     def test_prometheus_heartbeat_age_maps_to_health_states(self):
         samples = [

@@ -6,6 +6,10 @@
 
 	@provisioner path /grafana /grafana/*
 	handle @provisioner {
+		forward_auth demo-app:8000 {
+			uri /auth/grafana
+			copy_headers X-WEBAUTH-USER
+		}
 		reverse_proxy grafana:3000
 	}
 

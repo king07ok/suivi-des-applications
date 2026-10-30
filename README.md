@@ -1,18 +1,18 @@
-# Portail de suivi des applications des stagiaires — phases 1 à 4
+# Suivi des applications
 
 La phase 1 installe la pile locale de télémétrie : OpenTelemetry Collector,
 Prometheus, Alertmanager, Tempo, Loki et Grafana derrière Caddy. Le portail
 FastAPI et Grafana partagent le même domaine local.
 
-La phase 2 ajoute les tableaux de bord Grafana « Applications stagiaires » et
+La phase 2 ajoute les tableaux de bord Grafana « Suivi des applications » et
 « Supervision de la plateforme », ainsi que des règles d'alerte Prometheus pour
 les applications silencieuses, les erreurs, la latence et l'indisponibilité des
 composants de supervision. Alertmanager relaie ces alertes vers Slack lorsque
 le webhook est configuré.
 
 La phase 3 ajoute le registre des applications, les fiches, l'historique des
-modifications, l'authentification et les rôles administrateur, stagiaire et
-lecteur. La base SQLite est conservée dans un volume Docker dédié.
+modifications, l'authentification et les rôles Admin, Moniteur et Checker. La
+base SQLite est conservée dans un volume Docker dédié.
 
 ## Prérequis
 
@@ -41,15 +41,18 @@ est publié uniquement sur la boucle locale de la machine.
 
 - Portail des applications : http://localhost:8080/
 - Grafana : http://localhost:8080/grafana/
-- Identifiants Grafana : valeurs `GRAFANA_ADMIN_USER` et
+- Accès Checker à Grafana : mêmes identifiants que le portail; le rôle est
+  limité à la consultation
+- Compte technique Grafana : valeurs `GRAFANA_ADMIN_USER` et
   `GRAFANA_ADMIN_PASSWORD` du fichier `.env`
 - Première connexion au portail : valeurs `PORTAL_ADMIN_EMAIL` et
   `PORTAL_ADMIN_PASSWORD` du fichier `.env`
 
 Le compte administrateur initial est créé automatiquement au premier démarrage
 de la base; les redémarrages suivants ne réinitialisent pas son mot de passe.
-Connectez-vous puis créez les comptes stagiaires et lecteurs dans **Comptes**.
-Un utilisateur peut modifier son propre mot de passe depuis **Mon compte**.
+Connectez-vous puis créez les comptes Admin, Moniteur et Checker dans
+**Comptes**. Les Admins et Moniteurs peuvent modifier leur mot de passe depuis
+**Mon compte**.
 
 ## Vérification rapide
 
@@ -77,9 +80,11 @@ le dépôt Git, la version, le responsable et les dates de stage; elle conserve
 également un historique des modifications. Les fiches sont archivées, et non
 supprimées.
 
-Les administrateurs peuvent créer les comptes et gérer toutes les fiches. Les
-stagiaires consultent et modifient uniquement leurs propres fiches. Les lecteurs
-disposent d'un accès en consultation. Les mots de passe sont hachés avec
+Les Admins peuvent créer les comptes et gérer toutes les fiches. Les Moniteurs
+gèrent toutes les fiches, sans gérer les comptes. Les Checkers accèdent
+uniquement aux tableaux de bord Grafana via leur compte du portail. Au
+démarrage, les anciens rôles Stagiaire et Lecteur sont convertis en Moniteur et
+Checker. Les mots de passe sont hachés avec
 Argon2id; les formulaires sont protégés contre les requêtes CSRF, et les sessions
 sont stockées dans un cookie signé `HttpOnly` avec `SameSite=Lax`.
 
@@ -155,9 +160,8 @@ directement sur la machine.
 Sur la fiche d'une application active, le bouton **Atelier de code** ouvre un
 éditeur HTML/CSS/JavaScript. Les modifications sont enregistrées dans la base
 du portail, par application, avec un numéro de révision; elles ne changent pas
-le dépôt Git ni les fichiers du serveur. Seul un administrateur ou le
-stagiaire propriétaire peut enregistrer du code. Les lecteurs ne peuvent pas
-ouvrir l'éditeur.
+le dépôt Git ni les fichiers du serveur. Seuls les Admins et les Moniteurs peuvent enregistrer du code. Les Checkers
+ne peuvent pas ouvrir l'éditeur.
 
 L'aperçu s'exécute dans une iframe sandboxée du navigateur avec une politique
 de sécurité qui bloque les connexions réseau, les formulaires et l'accès au
@@ -220,7 +224,7 @@ volume `portal_data`.
 
 ## Phase 2 : dashboard et alertes
 
-Ouvrez le dashboard réutilisable **Applications stagiaires** dans le dossier
+Ouvrez le dashboard réutilisable **Suivi des applications** dans le dossier
 **Applications** de Grafana. Le filtre **Application** permet de sélectionner
 un ou plusieurs services OpenTelemetry. Il présente le dernier battement de
 coeur, les réponses HTTP par code, le débit, la latence globale p95, les 15
@@ -297,7 +301,7 @@ pour suivre les alertes et les composants. Si `SLACK_WEBHOOK_URL` est vide,
 aucune notification Slack n'est envoyée. Les e-mails de notification ne sont
 pas configurés.
 
-Le dashboard **Applications stagiaires** comporte aussi les fenêtres **Accès
+Le dashboard **Suivi des applications** comporte aussi les fenêtres **Accès
 Prometheus** et **Accès Slack**, avec les accès Prometheus et Slack en haut du
 tableau de bord. Ces liens s'ouvrent dans un nouvel onglet pour éviter que le
 navigateur ne tente d'afficher ces sites dans le cadre Grafana intégré.
@@ -321,7 +325,7 @@ docker compose ps
 ```
 
 Les règles devraient apparaître dans Prometheus après le redémarrage. Dans
-Grafana, ouvrez **Dashboards > Applications > Applications stagiaires**.
+Grafana, ouvrez **Dashboards > Applications > Suivi des applications**.
 
 ## Arrêt et données
 

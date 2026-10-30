@@ -13,7 +13,7 @@
   <aside class="sidebar" aria-label="Navigation principale">
     <a class="brand" href="/applications">
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span class="brand-copy"><strong>REGISTRE</strong><small>Applications stagiaires</small></span>
+      <span class="brand-copy"><strong>SUIVI</strong><small>Des applications</small></span>
     </a>
     <div class="nav-heading">SUIVI TECHNIQUE</div>
     <nav class="nav-list">
@@ -25,7 +25,7 @@
         <span class="nav-glyph" aria-hidden="true">♙</span><span>Comptes</span>
       </a>
       {% endif %}
-      <a class="nav-link" href="/grafana/d/stagiaires-applications/applications-stagiaires" target="_blank" rel="noopener">
+      <a class="nav-link" href="/grafana/d/stagiaires-applications/suivi-des-applications" target="_blank" rel="noopener">
         <span class="nav-glyph" aria-hidden="true">⌁</span><span>Supervision</span><span class="external-mark" aria-hidden="true">↗</span>
       </a>
     </nav>
@@ -52,13 +52,13 @@
     <div class="mobile-nav">
       <a class="brand brand-mobile" href="/applications">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span class="brand-copy"><strong>REGISTRE</strong><small>Applications stagiaires</small></span>
+        <span class="brand-copy"><strong>SUIVI</strong><small>Des applications</small></span>
       </a>
       <nav aria-label="Navigation mobile">
         <a href="/applications">Applications</a>
         {% if current_user.role == 'admin' %}<a href="/users">Comptes</a>{% endif %}
         <a href="/account/password">Mon compte</a>
-        <a href="/grafana/d/stagiaires-applications/applications-stagiaires">Grafana</a>
+        <a href="/grafana/d/stagiaires-applications/suivi-des-applications">Grafana</a>
         <form action="/logout" method="post">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit">Sortie</button>

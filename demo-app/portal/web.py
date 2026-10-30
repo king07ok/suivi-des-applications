@@ -12,12 +12,18 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from portal.app import ROLE_LABELS, get_database, redirect, render
+from portal.app import (
+    APPLICATION_MANAGER_ROLES,
+    ROLE_LABELS,
+    get_database,
+    redirect,
+    render,
+)
 from portal.email import EmailSettings, send_email
 from portal.models import Application, ApplicationCode, ApplicationHistory, User
 from portal.security import hash_password, needs_rehash, verify_password
@@ -247,6 +253,11 @@ def get_current_user(
     if user is None or not user.is_active:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Connexion requise.")
+    if user.role == "checker":
+        raise HTTPException(
+            status_code=403,
+            detail="Le rôle Checker donne uniquement accès aux tableaux Grafana.",
+        )
     return user
 
 
@@ -264,8 +275,8 @@ def secrets_compare(left: str, right: str) -> bool:
 
 
 def require_writer(user: User) -> None:
-    if user.role not in {"admin", "stagiaire"}:
-        raise HTTPException(status_code=403, detail="Votre rôle autorise uniquement la consultation.")
+    if user.role not in APPLICATION_MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="Votre rôle ne permet pas de modifier les applications.")
 
 
 def get_visible_application(
@@ -279,9 +290,7 @@ def get_visible_application(
         .filter(Application.id == application_id)
         .one_or_none()
     )
-    if application is None or (
-        user.role == "stagiaire" and application.owner_id != user.id
-    ):
+    if application is None:
         raise HTTPException(status_code=404, detail="Application introuvable.")
     return application
 
@@ -346,12 +355,18 @@ def application_form(
     error: str | None = None,
     status_code: int = 200,
 ):
-    interns = (
+    form_values = values or application_form_values(application)
+    if application is None and user.role in APPLICATION_MANAGER_ROLES:
+        form_values["owner_id"] = str(user.id)
+    owners = (
         session.query(User)
-        .filter(User.role == "stagiaire", User.is_active.is_(True))
+        .filter(
+            User.role.in_(APPLICATION_MANAGER_ROLES),
+            User.is_active.is_(True),
+        )
         .order_by(User.name)
         .all()
-        if user.role == "admin"
+        if user.role in APPLICATION_MANAGER_ROLES
         else []
     )
     return render(
@@ -360,8 +375,8 @@ def application_form(
         {
             "current_user": user,
             "application": application,
-            "values": values or application_form_values(application),
-            "interns": interns,
+            "values": form_values,
+            "owners": owners,
             "error": error,
             "page_title": "Modifier l’application" if application else "Nouvelle application",
         },
@@ -383,8 +398,6 @@ def filtered_applications(
         period = "all"
 
     query = session.query(Application).options(joinedload(Application.owner))
-    if user.role == "stagiaire":
-        query = query.filter(Application.owner_id == user.id)
     if status == "active":
         query = query.filter(Application.archived.is_(False))
     elif status == "archived":
@@ -399,9 +412,9 @@ def filtered_applications(
                 User.name.ilike(pattern),
             )
         )
-    elif user.role != "stagiaire":
+    else:
         query = query.join(Application.owner)
-    if owner_id is not None and user.role == "admin":
+    if owner_id is not None and user.role in APPLICATION_MANAGER_ROLES:
         query = query.filter(Application.owner_id == owner_id)
     today = date.today()
     if period == "current":
@@ -482,7 +495,12 @@ def validate_application(
 @router.get("/", include_in_schema=False)
 async def home(request: Request):
     if request.session.get("user_id"):
-        return redirect(request, "/applications")
+        return redirect(
+            request,
+            "/grafana/d/stagiaires-applications/suivi-des-applications"
+            if request.session.get("role") == "checker"
+            else "/applications",
+        )
     return redirect(request, "/login")
 
 
@@ -492,7 +510,12 @@ async def login_page(
     error: str | None = Query(default=None),
 ):
     if request.session.get("user_id"):
-        return redirect(request, "/applications")
+        return redirect(
+            request,
+            "/grafana/d/stagiaires-applications/suivi-des-applications"
+            if request.session.get("role") == "checker"
+            else "/applications",
+        )
     return render(request, "login.html", {"error": error})
 
 
@@ -518,7 +541,32 @@ async def login(
         session.commit()
     request.session.clear()
     request.session["user_id"] = user.id
-    return redirect(request, "/applications", "Connexion réussie.")
+    request.session["role"] = user.role
+    return redirect(
+        request,
+        "/grafana/d/stagiaires-applications/suivi-des-applications"
+        if user.role == "checker"
+        else "/applications",
+        "Connexion réussie.",
+    )
+
+
+@router.get("/auth/grafana", include_in_schema=False)
+async def grafana_auth(
+    request: Request,
+    session: Session = Depends(get_database),
+):
+    user_id = request.session.get("user_id")
+    if not isinstance(user_id, int):
+        return RedirectResponse("/login", status_code=303)
+    user = session.get(User, user_id)
+    if user is None or not user.is_active:
+        request.session.clear()
+        return RedirectResponse("/login", status_code=303)
+    return Response(
+        status_code=200,
+        headers={"X-WEBAUTH-USER": f"portal-user-{user.id}"},
+    )
 
 
 @router.post("/logout", include_in_schema=False)
@@ -594,7 +642,7 @@ async def password_change(
         "Modification du mot de passe du portail",
         (
             f"Bonjour {active_user.name},\n\n"
-            "Le mot de passe de votre compte sur le portail des applications stagiaires "
+            "Le mot de passe de votre compte sur Suivi des applications "
             "vient d’être modifié.\n"
             f"Accès au portail : {request.app.state.email_settings.portal_url}\n\n"
             "Si vous n’êtes pas à l’origine de cette modification, contactez "
@@ -649,16 +697,16 @@ async def application_list(
         .distinct()
         .subquery()
     )
-    interns = (
+    owners = (
         session.query(User)
         .filter(
-            User.role == "stagiaire",
+            User.role.in_(APPLICATION_MANAGER_ROLES),
             User.is_active.is_(True),
             User.id.in_(session.query(owner_scope.c.owner_id)),
         )
         .order_by(User.name)
         .all()
-        if user.role == "admin"
+        if user.role in APPLICATION_MANAGER_ROLES
         else []
     )
     total = len(applications)
@@ -671,11 +719,13 @@ async def application_list(
             "current_user": user,
             "applications": applications,
             "health_by_service": health_by_service,
-            "interns": interns,
+            "owners": owners,
             "filters": {
                 "q": q,
                 "status": status,
-                "owner_id": str(owner_id or "") if user.role == "admin" else "",
+                "owner_id": str(owner_id or "")
+                if user.role in APPLICATION_MANAGER_ROLES
+                else "",
                 "period": period,
                 "health": health,
             },
@@ -793,13 +843,17 @@ async def application_create(
         internship_end,
     )
     owner = user
-    if user.role == "admin":
+    if user.role in APPLICATION_MANAGER_ROLES:
         try:
-            owner = session.get(User, int(owner_id))
+            owner = session.get(User, int(owner_id or user.id))
         except (TypeError, ValueError):
             owner = None
-        if owner is None or owner.role != "stagiaire" or not owner.is_active:
-            error = "Sélectionnez un compte stagiaire actif comme responsable."
+        if (
+            owner is None
+            or owner.role not in APPLICATION_MANAGER_ROLES
+            or not owner.is_active
+        ):
+            error = "Sélectionnez un compte Admin ou Moniteur actif comme responsable."
     if error:
         return application_form(request, user, session, values=values, error=error, status_code=422)
     if session.query(Application.id).filter(Application.service_name == values["service_name"]).first():
@@ -876,8 +930,7 @@ async def application_detail(
             "otel_docker_endpoint": "http://portal-otel-gateway:4317",
             "otel_host_endpoint": "http://localhost:4317",
             "history_entries": history_entries,
-            "can_edit": user.role == "admin"
-            or (user.role == "stagiaire" and application.owner_id == user.id),
+            "can_edit": user.role in APPLICATION_MANAGER_ROLES,
             "code_studio_url": f"/applications/{application.id}/studio",
             "page_title": application.name,
         },
@@ -1196,13 +1249,17 @@ async def application_update(
         internship_end,
     )
     owner = application.owner
-    if user.role == "admin":
+    if user.role in APPLICATION_MANAGER_ROLES:
         try:
             owner = session.get(User, int(owner_id))
         except (TypeError, ValueError):
             owner = None
-        if owner is None or owner.role != "stagiaire" or not owner.is_active:
-            error = "Sélectionnez un compte stagiaire actif comme responsable."
+        if (
+            owner is None
+            or owner.role not in APPLICATION_MANAGER_ROLES
+            or not owner.is_active
+        ):
+            error = "Sélectionnez un compte Admin ou Moniteur actif comme responsable."
     if error:
         return application_form(
             request,
@@ -1308,7 +1365,7 @@ async def user_new_page(
         "user_form.html",
         {
             "current_user": user,
-            "values": {"name": "", "email": "", "role": "stagiaire"},
+            "values": {"name": "", "email": "", "role": "moniteur"},
             "page_title": "Créer un compte",
         },
     )
@@ -1377,10 +1434,10 @@ async def user_create(
     email_status = await send_notification_email(
         request,
         new_user.email,
-        "Bienvenue sur le portail des applications stagiaires",
+        "Bienvenue sur Suivi des applications",
         (
         f"Bonjour {new_user.name},\n\n"
-        "Votre compte sur le portail des applications stagiaires a été créé.\n"
+        "Votre compte sur Suivi des applications a été créé.\n"
         f"Adresse de connexion : {new_user.email}\n"
         f"Accès au portail : {request.app.state.email_settings.portal_url}\n\n"
         "Pour votre sécurité, votre mot de passe n’est pas inclus dans cet e-mail. "

@@ -30,15 +30,15 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5"><div class="empty-state"><h2>Aucun compte utilisateur</h2><p>Créez un compte stagiaire ou lecteur pour attribuer les accès.</p></div></td></tr>
+      <tr><td colspan="5"><div class="empty-state"><h2>Aucun compte utilisateur</h2><p>Créez un compte Admin, Moniteur ou Checker pour attribuer les accès.</p></div></td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
   <div class="permission-notes">
-    <div><span class="permission-key permission-admin">A</span><p><strong>Administrateur</strong><br>Gère les comptes et toutes les fiches.</p></div>
-    <div><span class="permission-key permission-intern">S</span><p><strong>Stagiaire</strong><br>Consulte et modifie ses propres fiches.</p></div>
-    <div><span class="permission-key permission-reader">L</span><p><strong>Lecteur</strong><br>Consulte le registre sans le modifier.</p></div>
+    <div><span class="permission-key permission-admin">A</span><p><strong>Admin</strong><br>Gère les comptes et toutes les fiches.</p></div>
+    <div><span class="permission-key permission-monitor">M</span><p><strong>Moniteur</strong><br>Gère toutes les fiches, sans gérer les comptes.</p></div>
+    <div><span class="permission-key permission-checker">C</span><p><strong>Checker</strong><br>Accède uniquement aux tableaux de bord Grafana.</p></div>
   </div>
 </section>
 {% endblock %}

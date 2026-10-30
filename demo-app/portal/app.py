@@ -21,10 +21,11 @@ from portal.models import Application, Base, User
 from portal.security import hash_password
 
 ROLE_LABELS = {
-    "admin": "Administrateur",
-    "stagiaire": "Stagiaire",
-    "lecteur": "Lecteur",
+    "admin": "Admin",
+    "moniteur": "Moniteur",
+    "checker": "Checker",
 }
+APPLICATION_MANAGER_ROLES = frozenset({"admin", "moniteur"})
 PORTAL_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=str(PORTAL_DIR / "templates"))
 TEMPLATES.env.filters["loads"] = json.loads
@@ -100,6 +101,13 @@ def create_app(
     async def lifespan(application: FastAPI):
         Base.metadata.create_all(engine)
         with session_factory() as session:
+            session.query(User).filter(User.role == "stagiaire").update(
+                {User.role: "moniteur"}, synchronize_session=False
+            )
+            session.query(User).filter(User.role == "lecteur").update(
+                {User.role: "checker"}, synchronize_session=False
+            )
+            session.commit()
             existing_admin = (
                 session.query(User)
                 .filter(User.email == normalized_email)
@@ -128,13 +136,13 @@ def create_app(
             callbacks=[
                 lambda options: registered_application_observations(session_factory)
             ],
-            description="Active applications registered in the internship portal.",
+            description="Active applications registered in the monitoring portal.",
         )
         yield
         engine.dispose()
 
     application = FastAPI(
-        title="Portail de suivi des applications",
+        title="Suivi des applications",
         docs_url=None,
         redoc_url=None,
         lifespan=lifespan,
