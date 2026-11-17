@@ -1,0 +1,40 @@
+prometheus.receive_http "local_prometheus" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 12345
+  }
+
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  external_labels = {
+    source = "soi-monitoring-local",
+  }
+
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROMETHEUS_URL")
+
+    queue_config {
+      max_shards            = 4
+      max_samples_per_send = 250
+    }
+
+    write_relabel_config {
+      source_labels = ["job"]
+      regex         = "^(grafana|loki|tempo|alertmanager|prometheus)$"
+      action        = "drop"
+    }
+
+    write_relabel_config {
+      source_labels = ["job", "__name__"]
+      regex         = "^cadvisor;(cadvisor_version_info|container_blkio_device_usage_total|container_cpu_load_average_10s|container_cpu_d_average_10s|container_creation_time_seconds|container_fs_.*|container_last_seen|container_memory_events_.*|container_memory_failcnt|container_memory_failures_total|container_memory_file_dirty_bytes|container_memory_file_writeback_bytes|container_memory_kernel_usage|container_memory_mapped_file|container_memory_pgscan_total|container_memory_pgsteal_total|container_memory_total_active_file_bytes|container_memory_total_inactive_file_bytes|container_memory_usage_bytes|container_memory_workingset_refault_.*|container_network_receive_packets_total|container_network_transmit_errors_total|container_network_transmit_packets_total|container_network_receive_packets_dropped_total|container_pressure_.*|container_scrape_error|container_spec_.*|container_start_time_seconds|container_tasks_state|machine_.*|go_.*|process_.*)$"
+      action        = "drop"
+    }
+
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROMETHEUS_USER")
+      password = sys.env("GRAFANA_CLOUD_PROMETHEUS_TOKEN")
+    }
+  }
+}

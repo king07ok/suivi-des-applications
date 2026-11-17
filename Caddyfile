@@ -1,4 +1,7 @@
 :80 {
+	@grafanaHome path /grafana /grafana/
+	redir @grafanaHome /grafana/dashboards/f/cg2rqqixrdclcc/applications 302
+
 	@prometheus path /prometheus /prometheus/*
 	handle @prometheus {
 		reverse_proxy prometheus:9090

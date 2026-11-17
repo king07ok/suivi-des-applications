@@ -1,0 +1,1119 @@
+{
+  "uid": "demo-stagiaire-monitoring",
+  "title": "Supervision application de démonstration",
+  "description": "Métriques OpenTelemetry effectivement collectées pour demo-stagiaire.",
+  "tags": [
+    "demo-stagiaire",
+    "opentelemetry",
+    "http"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 4,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Alertes",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Disponibilité du signal",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(time() - stagiaires_app_heartbeat_timestamp_seconds{service_name=\"demo-stagiaire\"} <= bool 300)",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Indique si un battement OpenTelemetry a été reçu dans les cinq dernières minutes.",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Âge du dernier battement",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - stagiaires_app_heartbeat_timestamp_seconds{service_name=\"demo-stagiaire\"}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Requêtes HTTP par statut",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status_code) (rate(stagiaires_app_requests_total{service_name=\"demo-stagiaire\"}[5m]))",
+          "legendFormat": "{{status_code}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "description": "Débit calculé à partir du compteur de requêtes OpenTelemetry.",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Requêtes HTTP actives",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "stagiaires_http_server_active_requests{service_name=\"demo-stagiaire\"}",
+          "legendFormat": "Requêtes actives"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Latence des requêtes p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(stagiaires_app_request_duration_milliseconds_bucket{service_name=\"demo-stagiaire\"}[5m]))) / 1000",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "description": "Quantile p95 de l’histogramme de durée des requêtes.",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Latence du serveur HTTP p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(stagiaires_http_server_duration_milliseconds_bucket{service_name=\"demo-stagiaire\"}[5m]))) / 1000",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "description": "Quantile p95 de l’histogramme de durée du serveur HTTP.",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Taille des réponses HTTP p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(stagiaires_http_server_response_size_bytes_bucket{service_name=\"demo-stagiaire\"}[5m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "description": "Quantile p95 des corps de réponse HTTP effectivement observés.",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Latence des appels HTTP sortants p95 (OBI)",
+          "description": "Mesure automatique OpenTelemetry eBPF des appels HTTP sortants du processus portail.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 21
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(stagiaires_http_client_request_duration_seconds_bucket{service_name=\"demo-stagiaire\"}[5m])))",
+              "legendFormat": "p95"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Taille des requêtes HTTP sortantes p95 (OBI)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 29
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(stagiaires_http_client_request_body_size_bytes_bucket{service_name=\"demo-stagiaire\"}[5m])))",
+              "legendFormat": "p95"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Taille des réponses HTTP sortantes p95 (OBI)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 29
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(stagiaires_http_client_response_body_size_bytes_bucket{service_name=\"demo-stagiaire\"}[5m])))",
+              "legendFormat": "p95"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "CPU du conteneur portail (cAdvisor)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 37
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"}[5m]))",
+              "legendFormat": "Cœurs CPU"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "cores"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "Mémoire active du conteneur portail (cAdvisor)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 37
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (container_label_com_docker_compose_service) (container_memory_working_set_bytes{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"})",
+              "legendFormat": "Mémoire active"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 13,
+          "type": "timeseries",
+          "title": "Trafic réseau du conteneur portail (cAdvisor)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 45
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (container_label_com_docker_compose_service) (rate(container_network_receive_bytes_total{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"}[5m]))",
+              "legendFormat": "Reçu"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (container_label_com_docker_compose_service) (rate(container_network_transmit_bytes_total{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"}[5m]))",
+              "legendFormat": "Envoyé"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Applications enregistrées",
+      "description": "Nombre de fiches publiées par le portail dans les métriques OpenTelemetry.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(stagiaires_portal_applications_registered{service_name=\"demo-stagiaire\"} == 1)",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "État de santé des conteneurs",
+      "description": "État Docker signalé par cAdvisor : 1 sain, 0 en échec.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min(container_health_state{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"})",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "En échec",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Sain",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Pic mémoire du portail",
+      "description": "Maximum de mémoire observé depuis le démarrage du conteneur, mesuré par cAdvisor.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_memory_max_usage_bytes{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"})",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Événements de mémoire insuffisante",
+      "description": "Nombre cumulé d’événements OOM des conteneurs du portail, mesuré par cAdvisor.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_oom_events_total{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"})",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "CPU utilisateur et système du portail",
+      "description": "Temps CPU consommé par le conteneur du portail, ventilé entre mode utilisateur et système.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 69
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_user_seconds_total{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"}[5m]))",
+          "legendFormat": "Utilisateur"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_system_seconds_total{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"}[5m]))",
+          "legendFormat": "Système"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Répartition de la mémoire du portail",
+      "description": "Mémoire RSS, cache et swap des conteneurs du portail, mesurés par cAdvisor.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 69
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (container_label_com_docker_compose_service) (container_memory_rss{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"})",
+          "legendFormat": "RSS"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (container_label_com_docker_compose_service) (container_memory_cache{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"})",
+          "legendFormat": "Cache"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (container_label_com_docker_compose_service) (container_memory_swap{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"})",
+          "legendFormat": "Swap"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Erreurs et pertes réseau du portail",
+      "description": "Débit des paquets reçus en erreur et des paquets sortants abandonnés, mesuré par cAdvisor.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 77
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_network_receive_errors_total{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"}[5m]))",
+          "legendFormat": "Erreurs reçues"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_network_transmit_packets_dropped_total{container_label_com_docker_compose_service=\"demo-app\",container_label_com_docker_compose_project=\"soi-monitoring\"}[5m]))",
+          "legendFormat": "Paquets sortants abandonnés"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "pps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Taille p95 des requêtes et réponses HTTP",
+      "description": "Tailles de corps mesurées pour les requêtes entrantes et les réponses du portail.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 77
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(stagiaires_http_server_request_body_size_bytes_bucket{service_name=\"demo-stagiaire\"}[15m])))",
+          "legendFormat": "Requête p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(stagiaires_http_server_response_body_size_bytes_bucket{service_name=\"demo-stagiaire\"}[15m])))",
+          "legendFormat": "Réponse p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Opérations SQLite du portail",
+      "description": "Débit des opérations SQL locales par type, mesuré directement sur SQLAlchemy.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 85
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (db_operation) (rate(stagiaires_app_database_operations_total{service_name=\"demo-stagiaire\",db_system=\"sqlite\",db_outcome=\"success\"}[5m]))",
+          "legendFormat": "{{db_operation}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Latence p95 des opérations SQLite",
+      "description": "Latence des requêtes SQLite du portail, ventilée par type d’opération SQL.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 85
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, db_operation) (rate(stagiaires_app_database_operation_duration_milliseconds_bucket{service_name=\"demo-stagiaire\",db_system=\"sqlite\"}[5m]))) and on(db_operation) (sum by (db_operation) (rate(stagiaires_app_database_operation_duration_milliseconds_count{service_name=\"demo-stagiaire\",db_system=\"sqlite\"}[5m])) > 0)",
+          "legendFormat": "{{db_operation}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Débit des appels HTTP sortants",
+      "description": "Requêtes clientes sortantes observées par OBI pour le processus du portail.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 93
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(stagiaires_http_client_request_duration_seconds_count{service_name=\"demo-stagiaire\"}[5m]))",
+          "legendFormat": "Appels sortants"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "type": "table",
+      "title": "Top 15 des routes les plus appelées",
+      "description": "Classement des routes ayant reçu le plus de requêtes pendant la période sélectionnée dans le tableau de bord.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 101
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(15, sum by (route) (increase(stagiaires_app_requests_total{service_name=\"demo-stagiaire\",route!=\"\",route!=\"unmatched\"}[$__range])) > 0)",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 26,
+      "type": "table",
+      "title": "Top 15 des routes les plus lentes (p95)",
+      "description": "Latence p95 par route sur les 15 dernières minutes. Les routes sans requêtes observées dans cet intervalle sont exclues.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 101
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(15, histogram_quantile(0.95, sum by (route, le) (rate(stagiaires_app_request_duration_milliseconds_bucket{service_name=\"demo-stagiaire\",route!=\"\",route!=\"unmatched\"}[15m]))) and on (route) (sum by (route) (rate(stagiaires_app_request_duration_milliseconds_count{service_name=\"demo-stagiaire\",route!=\"\",route!=\"unmatched\"}[15m])) > 0))",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    }
+  ]
+}

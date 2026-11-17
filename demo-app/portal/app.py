@@ -1,6 +1,7 @@
 import json
 import os
 import secrets
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
@@ -26,9 +27,107 @@ ROLE_LABELS = {
     "checker": "Checker",
 }
 APPLICATION_MANAGER_ROLES = frozenset({"admin", "moniteur"})
+GRAFANA_HOME_URL = "/grafana/dashboards/f/cg2rqqixrdclcc/applications"
 PORTAL_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=str(PORTAL_DIR / "templates"))
 TEMPLATES.env.filters["loads"] = json.loads
+
+
+def _instrument_database(engine: Engine) -> None:
+    meter = metrics.get_meter("portal.database")
+    operations = meter.create_counter(
+        "app.database.operations",
+        unit="{operation}",
+        description="Database operations completed by the portal.",
+    )
+    errors = meter.create_counter(
+        "app.database.errors",
+        unit="{error}",
+        description="Database operations that failed in the portal.",
+    )
+    duration = meter.create_histogram(
+        "app.database.operation.duration",
+        unit="ms",
+        description="Duration of portal database operations.",
+    )
+
+    def operation_name(statement: str | None) -> str:
+        keyword = (statement or "").strip().split(maxsplit=1)
+        name = keyword[0].lower() if keyword else ""
+        return name if name in {"select", "insert", "update", "delete"} else "other"
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def start_database_operation(
+        connection: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        connection.info.setdefault("portal_db_operation_stack", []).append(
+            (time.perf_counter(), operation_name(statement))
+        )
+
+    def finish_database_operation(
+        connection: Any,
+        outcome: str,
+    ) -> None:
+        stack = connection.info.get("portal_db_operation_stack")
+        if stack:
+            started_at, name = stack.pop()
+            duration.record(
+                (time.perf_counter() - started_at) * 1000,
+                {"db.system": "sqlite", "db.operation": name},
+            )
+        else:
+            name = "other"
+
+        operations.add(
+            1,
+            {
+                "db.system": "sqlite",
+                "db.operation": name,
+                "db.outcome": outcome,
+            },
+        )
+        if outcome == "error":
+            errors.add(1, {"db.system": "sqlite", "db.operation": name})
+
+        if stack == []:
+            connection.info.pop("portal_db_operation_stack", None)
+
+    @event.listens_for(engine, "after_cursor_execute")
+    def record_database_operation(
+        connection: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        finish_database_operation(connection, "success")
+
+    @event.listens_for(engine, "handle_error")
+    def record_database_error(exception_context: Any) -> None:
+        connection = exception_context.connection
+        if connection is None:
+            attributes = {
+                "db.system": "sqlite",
+                "db.operation": operation_name(exception_context.statement),
+                "db.outcome": "error",
+            }
+            operations.add(1, attributes)
+            errors.add(
+                1,
+                {
+                    key: value
+                    for key, value in attributes.items()
+                    if key != "db.outcome"
+                },
+            )
+            return
+        finish_database_operation(connection, "error")
 
 
 def registered_application_observations(session_factory):
@@ -66,6 +165,18 @@ def _create_engine(database_url: str) -> Engine:
     return engine
 
 
+def _ensure_application_website_url(engine: Engine) -> None:
+    columns = {
+        column["name"] for column in inspect(engine).get_columns("applications")
+    }
+    if "website_url" not in columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE applications "
+                "ADD COLUMN website_url VARCHAR(500) NOT NULL DEFAULT ''"
+            )
+
+
 def create_app(
     database_url: str | None = None,
     session_secret_key: str | None = None,
@@ -91,6 +202,7 @@ def create_app(
         raise RuntimeError("PORTAL_ADMIN_PASSWORD doit contenir au moins 12 caractères.")
 
     engine = _create_engine(resolved_database_url)
+    _instrument_database(engine)
     session_factory = sessionmaker(
         bind=engine,
         autoflush=False,
@@ -100,6 +212,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         Base.metadata.create_all(engine)
+        _ensure_application_website_url(engine)
         with session_factory() as session:
             session.query(User).filter(User.role == "stagiaire").update(
                 {User.role: "moniteur"}, synchronize_session=False
@@ -177,20 +290,11 @@ def create_app(
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        if request.url.path.endswith("/preview"):
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'none'; img-src data: blob:; "
-                "style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-                "connect-src 'none'; font-src data:; media-src data:; "
-                "form-action 'none'; frame-ancestors 'self'; base-uri 'none'; "
-                "object-src 'none'; sandbox allow-scripts"
-            )
-        else:
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'self'; img-src 'self' data:; style-src 'self'; "
-                "form-action 'self'; frame-ancestors 'self'; base-uri 'self'; "
-                "object-src 'none'"
-            )
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data:; style-src 'self'; "
+            "form-action 'self'; frame-ancestors 'self'; base-uri 'self'; "
+            "object-src 'none'"
+        )
         response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -239,6 +343,7 @@ def render(
 ):
     values = dict(context or {})
     values.setdefault("current_user", None)
+    values.setdefault("grafana_home_url", GRAFANA_HOME_URL)
     values.setdefault("role_labels", ROLE_LABELS)
     values.setdefault("csrf_token", csrf_token(request))
     values.setdefault("flash", request.session.pop("flash", None))

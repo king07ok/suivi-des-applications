@@ -6,18 +6,25 @@ import smtplib
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session as DatabaseSession
 from fastapi.testclient import TestClient
 
-from portal.app import create_app, registered_application_observations
+from portal.app import (
+    GRAFANA_HOME_URL,
+    _ensure_application_website_url,
+    _instrument_database,
+    create_app,
+    registered_application_observations,
+)
 from portal.email import EmailSettings, send_email
-from portal.models import Application, ApplicationCode, Base, User
+from portal.models import Application, Base, User
 from portal.security import hash_password, verify_password
-from portal.web import fetch_application_health, health_snapshot
+from portal.web import GRAFANA_DASHBOARDS, fetch_application_health, health_snapshot
 
 
 ADMIN_EMAIL = "admin@example.local"
@@ -27,6 +34,46 @@ READER_PASSWORD = "Reader-password-2026!"
 
 
 class PortalIntegrationTests(unittest.TestCase):
+    def test_database_metrics_record_successes_and_errors(self):
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        meter = Mock()
+        operations = Mock()
+        errors = Mock()
+        duration = Mock()
+        meter.create_counter.side_effect = [operations, errors]
+        meter.create_histogram.return_value = duration
+
+        with patch("portal.app.metrics.get_meter", return_value=meter):
+            _instrument_database(engine)
+            with engine.connect() as connection:
+                connection.exec_driver_sql("SELECT 1")
+                with self.assertRaises(OperationalError):
+                    connection.exec_driver_sql("SELECT * FROM missing_table")
+
+        self.assertEqual(operations.add.call_count, 2)
+        self.assertEqual(
+            operations.add.call_args_list[0].args[1],
+            {
+                "db.system": "sqlite",
+                "db.operation": "select",
+                "db.outcome": "success",
+            },
+        )
+        self.assertEqual(
+            operations.add.call_args_list[1].args[1],
+            {
+                "db.system": "sqlite",
+                "db.operation": "select",
+                "db.outcome": "error",
+            },
+        )
+        errors.add.assert_called_once_with(
+            1,
+            {"db.system": "sqlite", "db.operation": "select"},
+        )
+        self.assertEqual(duration.record.call_count, 2)
+
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         database_path = Path(self.temp_dir.name) / "portal-test.db"
@@ -105,11 +152,14 @@ class PortalIntegrationTests(unittest.TestCase):
         service_name="test-api",
         name="API de test",
         owner_id=None,
+        website_url="",
     ):
         page = self.client.get("/applications/new")
         if owner_id is None:
             with self.app.state.session_factory() as session:
                 owner_id = session.query(User.id).filter(User.role == "moniteur").scalar()
+                if owner_id is None:
+                    owner_id = session.query(User.id).filter(User.role == "admin").scalar()
         return self.client.post(
             "/applications/new",
             data={
@@ -119,11 +169,75 @@ class PortalIntegrationTests(unittest.TestCase):
                 "description": "Application de test fonctionnel.",
                 "language": "Python",
                 "repository_url": "https://git.example.local/team/test-api",
+                "website_url": website_url,
                 "version": "1.2.3",
                 "internship_start": "2026-01-01",
                 "internship_end": "2026-12-31",
                 "owner_id": str(owner_id),
             },
+        )
+
+    def test_jenkins_application_uses_its_own_grafana_dashboard(self):
+        self.assertEqual(self.login().status_code, 200)
+        self.assertIn(
+            self.create_user(
+                "Moniteur Jenkins",
+                "moniteur-jenkins@example.local",
+                "moniteur",
+                INTERN_PASSWORD,
+            ).status_code,
+            (200, 303),
+        )
+        with self.app.state.session_factory() as session:
+            owner_id = (
+                session.query(User.id)
+                .filter(User.email == "moniteur-jenkins@example.local")
+                .scalar()
+            )
+        self.assertEqual(
+            self.create_application(
+                service_name="jenkins",
+                name="Jenkins",
+                owner_id=owner_id,
+            ).status_code,
+            200,
+        )
+
+        detail = self.client.get("/applications/1")
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(
+            "/grafana/d/jenkins-monitoring/supervision-jenkins",
+            detail.text,
+        )
+        self.assertIn("SUPERVISION JENKINS", detail.text)
+        self.assertIn("PROMETHEUS", detail.text)
+        self.assertNotIn("OTEL_SERVICE_NAME=jenkins", detail.text)
+
+    def test_known_applications_have_individual_grafana_dashboards(self):
+        self.assertEqual(
+            GRAFANA_DASHBOARDS,
+            {
+                "demo-stagiaire": "/grafana/d/demo-stagiaire-monitoring/supervision-demo-stagiaire",
+                "eds-tresor-public": "/grafana/d/eds-tresor-public-monitoring/supervision-eds-tresor-public",
+                "jenkins": "/grafana/d/jenkins-monitoring/supervision-jenkins",
+                "tresor-public": "/grafana/d/tresor-public-monitoring/supervision-tresor-public",
+            },
+        )
+
+    def test_grafana_navigation_opens_applications_folder(self):
+        self.assertEqual(
+            GRAFANA_HOME_URL,
+            "/grafana/dashboards/f/cg2rqqixrdclcc/applications",
+        )
+        self.assertEqual(self.login().status_code, 200)
+
+        applications = self.client.get("/applications")
+
+        self.assertEqual(applications.status_code, 200)
+        self.assertEqual(
+            applications.text.count(f'href="{GRAFANA_HOME_URL}"'),
+            2,
         )
 
     def test_account_creation_sends_welcome_email_without_password(self):
@@ -291,13 +405,15 @@ class PortalIntegrationTests(unittest.TestCase):
         detail = self.client.get("/applications/1")
         self.assertEqual(detail.status_code, 200)
         self.assertIn("test-api", detail.text)
+        self.assertIn("Site web (URL réelle)", detail.text)
+        self.assertIn("Non renseigné", detail.text)
         self.assertIn("Date de début du projet", detail.text)
         self.assertIn("Date de déploiement du projet", detail.text)
         self.assertIn('href="/prometheus/"', detail.text)
         self.assertIn('href="https://slack.com"', detail.text)
         self.assertIn("Fiche créée", detail.text)
         self.assertIn('data-health-status="no-data"', detail.text)
-        self.assertIn("/grafana/d/stagiaires-applications/suivi-des-applications", detail.text)
+        self.assertIn("/grafana/", detail.text)
         self.assertIn("OTEL_SERVICE_NAME=test-api", detail.text)
         self.assertIn(
             "OTEL_EXPORTER_OTLP_ENDPOINT=http://portal-otel-gateway:4317",
@@ -339,6 +455,7 @@ class PortalIntegrationTests(unittest.TestCase):
                 "description": "Description mise à jour.",
                 "language": "Python",
                 "repository_url": "https://git.example.local/team/test-api",
+                "website_url": "https://app.example.local/updated",
                 "version": "2.0.0",
                 "internship_start": "2026-01-01",
                 "internship_end": "2026-12-31",
@@ -348,7 +465,134 @@ class PortalIntegrationTests(unittest.TestCase):
         self.assertEqual(edit.status_code, 200)
         updated = self.client.get("/applications/1")
         self.assertIn("API de test mise à jour", updated.text)
+        self.assertIn('href="https://app.example.local/updated"', updated.text)
         self.assertIn("Fiche modifiée", updated.text)
+
+    def test_application_website_url_is_displayed_searchable_and_exported(self):
+        self.assertEqual(self.login().status_code, 200)
+        website_url = "https://app.example.local/production"
+        created = self.create_application(website_url=website_url)
+        self.assertEqual(created.status_code, 200)
+
+        detail = self.client.get("/applications/1")
+        self.assertIn(f'href="{website_url}"', detail.text)
+        register = self.client.get("/applications?q=app.example.local")
+        self.assertIn(f'href="{website_url}"', register.text)
+        exported = self.client.get("/applications/export.csv")
+        rows = list(
+            csv.reader(
+                io.StringIO(exported.content.decode("utf-8-sig")),
+                delimiter=";",
+            )
+        )
+        self.assertIn("Site web", rows[0])
+        self.assertEqual(rows[1][rows[0].index("Site web")], website_url)
+
+    def test_application_website_url_rejects_non_http_schemes(self):
+        self.assertEqual(self.login().status_code, 200)
+        response = self.create_application(website_url="javascript:alert(1)")
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("adresse de site web", response.text)
+
+    def test_legacy_application_table_gets_empty_website_url_column(self):
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE applications (id INTEGER PRIMARY KEY, name VARCHAR(120))"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO applications (id, name) VALUES (1, 'Ancienne fiche')"
+            )
+
+        _ensure_application_website_url(engine)
+
+        with engine.connect() as connection:
+            value = connection.exec_driver_sql(
+                "SELECT website_url FROM applications WHERE id = 1"
+            ).scalar_one()
+        self.assertEqual(value, "")
+
+    def test_only_admin_can_open_dynamic_application_metrics(self):
+        _, application_id = self.prepare_accounts_and_application()
+        dashboard = self.client.get("/applications")
+        metrics_url = f"/applications/{application_id}/metrics"
+        self.assertIn(f'href="{metrics_url}"', dashboard.text)
+
+        requests = []
+
+        def prometheus_response(request):
+            requests.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "status": "success",
+                    "data": {
+                        "resultType": "vector",
+                        "result": [
+                            {
+                                "metric": {
+                                    "__name__": "probe_success",
+                                    "job": "test-api",
+                                    "service_name": "test-api",
+                                },
+                                "value": [1, "1"],
+                            },
+                            {
+                                "metric": {
+                                    "__name__": "http_requests_total",
+                                    "method": "GET",
+                                    "service_name": "test-api",
+                                    "status": "200",
+                                },
+                                "value": [1, "42"],
+                            },
+                            {
+                                "metric": {
+                                    "__name__": "http_requests_total",
+                                    "method": "POST",
+                                    "service_name": "test-api",
+                                    "status": "201",
+                                },
+                                "value": [1, "7"],
+                            },
+                        ],
+                    },
+                },
+            )
+
+        async_client = httpx.AsyncClient
+        with patch(
+            "portal.web.httpx.AsyncClient",
+            side_effect=lambda **kwargs: async_client(
+                transport=httpx.MockTransport(prometheus_response),
+                **kwargs,
+            ),
+        ):
+            response = self.client.get(metrics_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("probe_success", response.text)
+        self.assertIn("http_requests_total", response.text)
+        self.assertIn("42", response.text)
+        self.assertIn("method=GET", response.text)
+        self.assertEqual(
+            requests[0].url.params["query"],
+            '{service_name="test-api"}',
+        )
+
+        moniteur = TestClient(self.app)
+        self.addCleanup(moniteur.close)
+        self.assertEqual(
+            self.login(
+                moniteur,
+                "stagiaire-a@example.local",
+                INTERN_PASSWORD,
+            ).status_code,
+            200,
+        )
+        self.assertNotIn(f'href="{metrics_url}"', moniteur.get("/applications").text)
+        self.assertEqual(moniteur.get(metrics_url).status_code, 403)
 
     def test_telemetry_check_reports_signals_and_requires_csrf(self):
         self.assertEqual(self.login().status_code, 200)
@@ -396,108 +640,67 @@ class PortalIntegrationTests(unittest.TestCase):
             self.app.state.prometheus_url,
         )
 
-    def test_code_studio_saves_site_code_and_isolates_preview(self):
+    def test_code_workshop_and_preview_routes_are_removed(self):
         self.assertEqual(self.login().status_code, 200)
-        self.create_user(
-            "Stagiaire A",
-            "stagiaire-a@example.local",
-            "moniteur",
-            INTERN_PASSWORD,
-        )
-        with self.app.state.session_factory() as session:
-            owner_id = (
-                session.query(User.id)
-                .filter(User.email == "stagiaire-a@example.local")
-                .scalar()
-            )
-        self.assertEqual(self.create_application(owner_id=owner_id).status_code, 200)
-
+        self.assertEqual(self.create_application().status_code, 200)
         detail = self.client.get("/applications/1")
-        self.assertIn('href="/applications/1/studio"', detail.text)
-        studio = self.client.get("/applications/1/studio")
-        self.assertEqual(studio.status_code, 200)
-        self.assertIn('sandbox="allow-scripts"', studio.text)
-        self.assertIn("ne modifie pas le", studio.text)
-        csrf = self.csrf(studio)
-        source = {
-            "html_code": '<main><h1>Édition du site test</h1><p id="result"></p></main>',
-            "css_code": "body { color: #234; }",
-            "js_code": 'document.querySelector("#result").textContent = "Aperçu actif";',
-        }
-        saved = self.client.post(
-            "/applications/1/studio",
-            data={"csrf_token": csrf, "revision": "0", **source},
+        self.assertEqual(detail.status_code, 200)
+        self.assertNotIn("Atelier de code", detail.text)
+        self.assertEqual(self.client.get("/applications/1/studio").status_code, 404)
+        self.assertEqual(self.client.post("/applications/1/studio").status_code, 404)
+        self.assertEqual(self.client.get("/applications/1/preview").status_code, 404)
+
+    def test_admin_integration_guide_is_only_accessible_to_admin(self):
+        admin_home = self.login()
+        self.assertIn('href="/admin/integration-guide"', admin_home.text)
+
+        guide = self.client.get("/admin/integration-guide")
+        self.assertEqual(guide.status_code, 200)
+        self.assertIn("Ajouter une application ou un site", guide.text)
+        self.assertIn("OpenTelemetry", guide.text)
+        self.assertIn("Blackbox", guide.text)
+
+        self.assertIn(
+            self.create_user(
+                "Moniteur guide",
+                "moniteur-guide@example.local",
+                "moniteur",
+                "Guide-moniteur-password-2026!",
+            ).status_code,
+            (200, 303),
         )
-        self.assertEqual(saved.status_code, 200)
-        self.assertIn("Version 1 enregistrée", saved.text)
-
-        preview = self.client.get("/applications/1/preview")
-        self.assertEqual(preview.status_code, 200)
-        self.assertIn(source["html_code"], preview.text)
-        self.assertIn(source["css_code"], preview.text)
-        self.assertIn(source["js_code"], preview.text)
-        policy = preview.headers["content-security-policy"]
-        self.assertIn("sandbox allow-scripts", policy)
-        self.assertIn("connect-src 'none'", policy)
-        self.assertIn("script-src 'unsafe-inline'", policy)
-        self.assertIn("frame-ancestors 'self'", policy)
-
-        with self.app.state.session_factory() as session:
-            saved_code = (
-                session.query(ApplicationCode)
-                .filter_by(application_id=1)
-                .one()
-            )
-            self.assertEqual(saved_code.revision, 1)
-            self.assertEqual(saved_code.updated_by_id, 1)
-
-        stale = self.client.post(
-            "/applications/1/studio",
-            data={
-                "csrf_token": csrf,
-                "revision": "0",
-                **{**source, "html_code": "<h1>Ancienne version</h1>"},
-            },
-        )
-        self.assertEqual(stale.status_code, 409)
+        moniteur = TestClient(self.app)
+        self.addCleanup(moniteur.close)
         self.assertEqual(
-            re.search(r'name="revision"\s+value="([^"]+)"', stale.text).group(1),
-            "0",
+            self.login(
+                moniteur,
+                "moniteur-guide@example.local",
+                "Guide-moniteur-password-2026!",
+            ).status_code,
+            200,
         )
-        repeated_stale = self.client.post(
-            "/applications/1/studio",
-            data={
-                "csrf_token": csrf,
-                "revision": "0",
-                **{**source, "html_code": "<h1>Ancienne version</h1>"},
-            },
-        )
-        self.assertEqual(repeated_stale.status_code, 409)
-        with self.app.state.session_factory() as session:
-            saved_code = session.query(ApplicationCode).filter_by(application_id=1).one()
-            self.assertEqual(saved_code.revision, 1)
-            self.assertEqual(saved_code.html_code, source["html_code"])
+        moniteur_home = moniteur.get("/applications")
+        self.assertNotIn('href="/admin/integration-guide"', moniteur_home.text)
+        self.assertEqual(moniteur.get("/admin/integration-guide").status_code, 403)
 
-        oversized = self.client.post(
-            "/applications/1/studio",
-            data={
-                "csrf_token": csrf,
-                "revision": "1",
-                **{**source, "html_code": "x" * 20001},
-            },
+        self.assertIn(
+            self.create_user(
+                "Checker guide",
+                "checker-guide@example.local",
+                "checker",
+                "Guide-checker-password-2026!",
+            ).status_code,
+            (200, 303),
         )
-        self.assertEqual(oversized.status_code, 422)
-        self.assertIn("20 000 caractères", oversized.text)
-        with self.app.state.session_factory() as session:
-            saved_code = session.query(ApplicationCode).filter_by(application_id=1).one()
-            self.assertEqual(saved_code.revision, 1)
-            self.assertEqual(saved_code.html_code, source["html_code"])
-
-        missing_csrf = self.client.post(
-            "/applications/1/studio",
-            data={"revision": "1", **source},
+        checker = TestClient(self.app)
+        self.addCleanup(checker.close)
+        self.login(
+            checker,
+            "checker-guide@example.local",
+            "Guide-checker-password-2026!",
+            follow_redirects=False,
         )
-        self.assertEqual(missing_csrf.status_code, 403)
+        self.assertEqual(checker.get("/admin/integration-guide").status_code, 403)
 
     def test_moniteur_can_edit_all_applications_and_checker_is_dashboard_only(self):
         owner_a, application_a = self.prepare_accounts_and_application()
@@ -532,9 +735,6 @@ class PortalIntegrationTests(unittest.TestCase):
             ).status_code,
             200,
         )
-        self.assertEqual(intern.get(f"/applications/{application_a}/studio").status_code, 200)
-        self.assertEqual(intern.get("/applications/2/studio").status_code, 200)
-        self.assertEqual(intern.get("/applications/2/preview").status_code, 200)
         self.assertEqual(intern.get("/users").status_code, 403)
         self.assertEqual(intern.get("/users/new").status_code, 403)
 
@@ -549,7 +749,7 @@ class PortalIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(
             response.headers["location"],
-            "/grafana/d/stagiaires-applications/suivi-des-applications",
+            "/grafana/",
         )
         self.assertEqual(reader.get("/applications").status_code, 403)
         self.assertEqual(reader.get("/applications/export.csv").status_code, 403)
@@ -746,7 +946,7 @@ class PortalIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(
             reader.get("/", follow_redirects=False).headers["location"],
-            "/grafana/d/stagiaires-applications/suivi-des-applications",
+            "/grafana/",
         )
         self.assertEqual(reader.get("/applications").status_code, 403)
         self.assertEqual(reader.get("/applications/new").status_code, 403)
@@ -754,6 +954,20 @@ class PortalIntegrationTests(unittest.TestCase):
         self.assertEqual(reader.get("/account/password").status_code, 403)
         self.assertEqual(reader.get("/users").status_code, 403)
         self.assertEqual(reader.get("/users/new").status_code, 403)
+        grafana_logout = reader.get(
+            "/auth/grafana/logout",
+            follow_redirects=False,
+        )
+        self.assertEqual(grafana_logout.status_code, 303)
+        self.assertEqual(grafana_logout.headers["location"], "/login")
+        login_page = reader.get(grafana_logout.headers["location"])
+        self.assertEqual(login_page.status_code, 200)
+        self.assertIn("ACCÈS AU PORTAIL", login_page.text)
+        self.assertIn('action="/login"', login_page.text)
+        self.assertEqual(
+            reader.get("/auth/grafana", follow_redirects=False).headers["location"],
+            "/login",
+        )
 
     def test_health_filter_and_csv_export_respect_scope_and_escape_formulas(self):
         owner_id, _ = self.prepare_accounts_and_application()
@@ -978,6 +1192,158 @@ class PortalIntegrationTests(unittest.TestCase):
                     .scalar(),
                     "checker",
                 )
+
+    def test_jenkins_scrape_health_maps_to_health_states(self):
+        for scrape_value, expected_status in (("0", "healthy"), ("301", "unavailable")):
+            with self.subTest(expected_status=expected_status):
+                transport = httpx.MockTransport(
+                    lambda request: httpx.Response(
+                        200,
+                        json={
+                            "status": "success",
+                            "data": {
+                                "resultType": "vector",
+                                "result": [
+                                    {
+                                        "metric": {
+                                            "job": "jenkins",
+                                            "service_name": "jenkins",
+                                        },
+                                        "value": [0, scrape_value],
+                                    }
+                                ],
+                            },
+                        },
+                    )
+                )
+                async_client = httpx.AsyncClient
+                with patch(
+                    "portal.web.httpx.AsyncClient",
+                    side_effect=lambda **kwargs: async_client(
+                        transport=transport,
+                        **kwargs,
+                    ),
+                ):
+                    health = asyncio.run(
+                        fetch_application_health(["jenkins"], "http://prometheus")
+                    )
+                self.assertEqual(health["jenkins"]["status"], expected_status)
+
+    def test_tresor_public_probe_health_maps_to_health_states(self):
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "status": "success",
+                    "data": {
+                        "resultType": "vector",
+                        "result": [
+                            {
+                                "metric": {
+                                    "job": "tresor-public",
+                                    "service_name": "tresor-public",
+                                },
+                                "value": [0, "0"],
+                            }
+                        ],
+                    },
+                },
+            )
+        )
+        async_client = httpx.AsyncClient
+        with patch(
+            "portal.web.httpx.AsyncClient",
+            side_effect=lambda **kwargs: async_client(
+                transport=transport,
+                **kwargs,
+            ),
+        ):
+            health = asyncio.run(
+                fetch_application_health(["tresor-public"], "http://prometheus")
+            )
+        self.assertEqual(health["tresor-public"]["status"], "healthy")
+
+    def test_eds_probe_health_maps_failed_probe_to_unavailable(self):
+        requested_queries = []
+
+        def prometheus_response(request):
+            requested_queries.append(request.url.params["query"])
+            return httpx.Response(
+                200,
+                json={
+                    "status": "success",
+                    "data": {
+                        "resultType": "vector",
+                        "result": [
+                            {
+                                "metric": {
+                                    "job": "eds-tresor-public",
+                                    "service_name": "eds-tresor-public",
+                                },
+                                "value": [0, "301"],
+                            }
+                        ],
+                    },
+                },
+            )
+
+        transport = httpx.MockTransport(prometheus_response)
+        async_client = httpx.AsyncClient
+        with patch(
+            "portal.web.httpx.AsyncClient",
+            side_effect=lambda **kwargs: async_client(
+                transport=transport,
+                **kwargs,
+            ),
+        ):
+            health = asyncio.run(
+                fetch_application_health(
+                    ["eds-tresor-public"],
+                    "http://prometheus",
+                )
+            )
+
+        self.assertIn('job=~"tresor-public|eds-tresor-public"', requested_queries[0])
+        self.assertIn("or on (service_name, instance)", requested_queries[0])
+        self.assertEqual(health["eds-tresor-public"]["status"], "unavailable")
+
+    def test_tresor_public_application_uses_its_own_grafana_dashboard(self):
+        self.assertEqual(self.login().status_code, 200)
+        self.assertIn(
+            self.create_user(
+                "Tsilavina",
+                "tsilavina@example.local",
+                "moniteur",
+                INTERN_PASSWORD,
+            ).status_code,
+            (200, 303),
+        )
+        with self.app.state.session_factory() as session:
+            owner_id = (
+                session.query(User.id)
+                .filter(User.email == "tsilavina@example.local")
+                .scalar()
+            )
+        self.assertEqual(
+            self.create_application(
+                service_name="tresor-public",
+                name="Portail Trésor Public",
+                owner_id=owner_id,
+            ).status_code,
+            200,
+        )
+
+        detail = self.client.get("/applications/1")
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(
+            "/grafana/d/tresor-public-monitoring/supervision-tresor-public",
+            detail.text,
+        )
+        self.assertIn("SUPERVISION PORTAIL TRÉSOR PUBLIC", detail.text)
+        self.assertIn("PROMETHEUS", detail.text)
+        self.assertNotIn("OTEL_SERVICE_NAME=tresor-public", detail.text)
+        self.assertNotIn("Demo@2026", detail.text)
 
     def test_prometheus_heartbeat_age_maps_to_health_states(self):
         samples = [

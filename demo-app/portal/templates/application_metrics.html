@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading page-heading-compact">
+  <div>
+    <div class="eyebrow"><a href="/applications">APPLICATIONS</a> <span>·</span> MÉTRIQUES DISPONIBLES</div>
+    <h1>{{ application.name }}</h1>
+    <p class="page-lede">Mesures actuellement exposées pour le service <code>{{ application.service_name }}</code>.</p>
+  </div>
+  <a class="button button-secondary" href="/applications/{{ application.id }}">Retour à la fiche</a>
+</div>
+
+<section class="record-sheet metrics-sheet" aria-label="Métriques de l’application">
+  <header class="sheet-heading">
+    <span>MESURES OBSERVÉES DANS PROMETHEUS</span>
+    <span class="sheet-number">{{ metrics|length }} MÉTRIQUE{% if metrics|length != 1 %}S{% endif %}</span>
+  </header>
+  {% if metrics_error %}
+    <div class="empty-state metrics-empty" role="status">
+      <h2>Liste temporairement indisponible</h2>
+      <p>{{ metrics_error }}</p>
+    </div>
+  {% elif metrics %}
+    <p class="metrics-note">Liste construite automatiquement à partir des séries Prometheus associées à ce service. Les valeurs affichées correspondent à la dernière collecte disponible.</p>
+    <div class="table-wrap">
+      <table class="applications-table metrics-table">
+        <thead><tr><th scope="col">MÉTRIQUE</th><th scope="col">SÉRIES</th><th scope="col">VALEUR ET ÉTIQUETTES</th></tr></thead>
+        <tbody>
+          {% for metric in metrics %}
+          <tr>
+            <td data-label="Métrique"><code class="metric-name">{{ metric.name }}</code></td>
+            <td data-label="Séries">{{ metric.series|length }}</td>
+            <td data-label="Valeur et étiquettes">
+              <ul class="metric-series-list">
+                {% for series in metric.series %}
+                <li><code>{{ series.value }}</code>{% if series.labels %}<small>{{ series.labels|join(' · ') }}</small>{% endif %}</li>
+                {% endfor %}
+              </ul>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state metrics-empty">
+      <h2>Aucune métrique disponible pour le moment</h2>
+      <p>Aucune série Prometheus récente n’est associée au service <code>{{ application.service_name }}</code>.</p>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

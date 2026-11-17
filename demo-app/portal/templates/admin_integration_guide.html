@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading page-heading-compact">
+  <div>
+    <div class="eyebrow">ADMINISTRATION <span>·</span> INTÉGRATION DES SERVICES</div>
+    <h1>Guide d’intégration</h1>
+    <p class="page-lede">Ajouter une fiche, raccorder les signaux et vérifier les données avant de créer un tableau Grafana.</p>
+  </div>
+</div>
+
+<section class="admin-guide" aria-label="Guide d’installation des applications et sites">
+  <div class="admin-guide-callout">
+    <strong>À retenir</strong>
+    <p>Créer une fiche dans le portail n’installe pas automatiquement une sonde ou un agent. Chaque signal doit être réellement fourni par l’application, son exporter ou une sonde, puis vérifié dans Prometheus.</p>
+  </div>
+
+  <div class="admin-guide-grid">
+    <article class="admin-guide-card">
+      <span class="guide-index">01 · PORTAIL</span>
+      <h2>Ajouter une application ou un site</h2>
+      <ol>
+        <li>Dans <strong>Applications</strong>, choisir <strong>Ajouter une application</strong>.</li>
+        <li>Renseigner le nom, le responsable, le langage, la version et les dates du projet.</li>
+        <li>Choisir un <strong>nom de service unique et stable</strong>. Il doit correspondre à <code>OTEL_SERVICE_NAME</code> ou au label <code>service_name</code> des métriques.</li>
+        <li>Pour un site, ajouter son adresse <code>http://</code> ou <code>https://</code> dans <strong>Site web</strong>. Le dépôt Git est un champ séparé.</li>
+      </ol>
+      <p>La fiche documente le service et ses liens; elle ne déploie pas l’application et ne crée pas, à elle seule, de données de supervision.</p>
+    </article>
+
+    <article class="admin-guide-card">
+      <span class="guide-index">02 · OPENTELEMETRY</span>
+      <h2>Instrumenter une application</h2>
+      <p>Ajouter le SDK ou l’auto-instrumentation compatible avec son langage/framework, puis configurer son export OTLP. Pour un conteneur sur le réseau Docker <code>telemetry</code> partagé :</p>
+      <pre><code>OTEL_SERVICE_NAME=mon-service
+OTEL_RESOURCE_ATTRIBUTES=service.namespace=mon-projet,deployment.environment.name=production
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_METRICS_EXPORTER=otlp
+OTEL_TRACES_EXPORTER=otlp</code></pre>
+      <p>Un programme installé sur le même serveur que Docker peut utiliser <code>http://127.0.0.1:4318</code>. Pour Python/FastAPI, installer les paquets <code>opentelemetry-distro</code> et <code>opentelemetry-exporter-otlp</code>, puis démarrer l’application via <code>opentelemetry-instrument</code>. Les mesures métier (files, traitements, erreurs métier) demandent une instrumentation dans le code.</p>
+      <p>Pour plusieurs réplicas, conserver le même nom de service et identifier chaque instance séparément. Éviter les URL brutes, identifiants utilisateurs, courriels et secrets dans les attributs.</p>
+    </article>
+
+    <article class="admin-guide-card">
+      <span class="guide-index">03 · AUTRES SOURCES</span>
+      <h2>Raccorder les exporters et instances</h2>
+      <ul>
+        <li><strong>Endpoint Prometheus :</strong> si l’application expose déjà <code>/metrics</code>, ajouter une cible dans <code>prometheus.yml</code>, avec une adresse joignable depuis Prometheus et un label <code>service_name</code>.</li>
+        <li><strong>Site sans accès au code :</strong> ajouter son URL comme cible Blackbox. Cela mesure surtout disponibilité, latence, DNS et réponse HTTP, pas les métriques internes de l’application.</li>
+        <li><strong>Serveur Linux :</strong> installer Node Exporter sur chaque hôte à superviser et ajouter sa cible à Prometheus. Node Exporter mesure l’hôte, pas les fonctions métier.</li>
+        <li><strong>Conteneurs Docker :</strong> cAdvisor collecte les ressources des conteneurs visibles par son hôte; les métriques de la pile locale sont déjà raccordées.</li>
+        <li><strong>Jenkins ou autre produit :</strong> activer son endpoint/exporter officiel, vérifier ses accès, puis le déclarer comme cible Prometheus.</li>
+      </ul>
+      <p>Si l’application est sur un autre serveur, utiliser un réseau privé/VPN, TLS et un pare-feu limité aux hôtes attendus. Le Collector actuel n’est pas publié pour un accès distant direct; ne pas exposer OTLP sans protection.</p>
+    </article>
+
+    <article class="admin-guide-card">
+      <span class="guide-index">04 · VALIDATION</span>
+      <h2>Vérifier les données puis créer le tableau</h2>
+      <ol>
+        <li>Vérifier que l’application, le Collector et Prometheus sont actifs, puis générer du trafic de test.</li>
+        <li>Dans Grafana <strong>Explore</strong> avec Prometheus, exécuter une requête sur le nom de service. Exemple : <code>stagiaires_app_requests_total{service_name="mon-service"}</code>.</li>
+        <li>Pour un exporter Prometheus, vérifier <code>up{job="mon-exporter"}</code>; pour une sonde, vérifier <code>probe_success</code>.</li>
+        <li>Confirmer que les valeurs sont réelles et évoluent avant d’ajouter des panneaux. Créer le tableau uniquement avec les métriques présentes.</li>
+      </ol>
+      <p>Les métriques reçues par OpenTelemetry sont exposées à Prometheus par <code>otel-collector:8889</code>; les traces vont vers Tempo et les journaux OTLP vers Loki lorsque l’application les exporte.</p>
+    </article>
+  </div>
+</section>
+{% endblock %}

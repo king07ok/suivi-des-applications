@@ -1,0 +1,15 @@
+routes:
+  ignored_patterns:
+    - /health
+    - /metrics
+  ignore_mode: all
+  unmatched: heuristic
+
+otel_metrics_export:
+  endpoint: http://otel-collector:4318
+
+discovery:
+  instrument:
+    - name: demo-stagiaire
+      namespace: stagiaires
+      open_ports: 8000

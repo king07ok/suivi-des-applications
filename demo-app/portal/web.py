@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -25,7 +25,7 @@ from portal.app import (
     render,
 )
 from portal.email import EmailSettings, send_email
-from portal.models import Application, ApplicationCode, ApplicationHistory, User
+from portal.models import Application, ApplicationHistory, User
 from portal.security import hash_password, needs_rehash, verify_password
 
 logger = logging.getLogger(__name__)
@@ -44,44 +44,25 @@ HEALTH_LABELS = {
     "no-data": "Aucun signal",
     "unknown": "État inconnu",
 }
-MAX_CODE_LENGTH = 20000
-STARTER_HTML = """<main class="welcome">
-  <p class="eyebrow">SITE DE TEST</p>
-  <h1>Votre espace de création</h1>
-  <p>Modifiez le HTML, le CSS et le JavaScript, puis enregistrez pour voir le résultat ici.</p>
-  <button id="hello-button" type="button">Tester l’interaction</button>
-  <p id="message" role="status"></p>
-</main>"""
-STARTER_CSS = """* { box-sizing: border-box; }
-body {
-  margin: 0;
-  padding: 3rem;
-  color: #1c2738;
-  background: #eef1f5;
-  font: 16px/1.6 system-ui, sans-serif;
+GRAFANA_DASHBOARDS = {
+    "demo-stagiaire": "/grafana/d/demo-stagiaire-monitoring/supervision-demo-stagiaire",
+    "eds-tresor-public": "/grafana/d/eds-tresor-public-monitoring/supervision-eds-tresor-public",
+    "jenkins": "/grafana/d/jenkins-monitoring/supervision-jenkins",
+    "tresor-public": "/grafana/d/tresor-public-monitoring/supervision-tresor-public",
 }
-.welcome { max-width: 42rem; margin: 2rem auto; }
-.eyebrow { color: #3658b7; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
-h1 { line-height: 1.15; }
-button { padding: .7rem 1rem; border: 0; background: #3658b7; color: white; cursor: pointer; }"""
-STARTER_JS = """document.querySelector("#hello-button")?.addEventListener("click", () => {
-  document.querySelector("#message").textContent = "Votre aperçu fonctionne.";
-});"""
-
-
 def health_snapshot(status: str, age_seconds: float | None = None) -> dict:
     if status == "healthy":
         label = "Opérationnel"
-        description = "Dernier battement de cœur reçu il y a moins d’une minute."
+        description = "Dernier signal de supervision reçu il y a moins d’une minute."
     elif status == "warning":
         label = "À surveiller"
-        description = "Le dernier battement de cœur date de plus d’une minute."
+        description = "Le dernier signal de supervision date de plus d’une minute."
     elif status == "unavailable":
         label = "Indisponible"
-        description = "Aucun battement de cœur récent depuis plus de cinq minutes."
+        description = "Aucun signal de supervision récent depuis plus de cinq minutes."
     elif status == "no-data":
         label = "Aucun signal"
-        description = "Aucun battement de cœur n’a encore été reçu pour ce service."
+        description = "Aucun signal de supervision n’a encore été reçu pour ce service."
     else:
         status = "unknown"
         label = "État inconnu"
@@ -127,7 +108,14 @@ async def fetch_application_health(
             response = await client.get(
                 f"{prometheus_url}/api/v1/query",
                 params={
-                    "query": "time() - stagiaires_app_heartbeat_timestamp_seconds"
+                    "query": (
+                        'time() - stagiaires_app_heartbeat_timestamp_seconds or '
+                        'label_replace((1 - up{job="jenkins"}) * 301, '
+                        '"service_name", "jenkins", "job", ".*") or '
+                        '((1 - (probe_success{job=~"tresor-public|eds-tresor-public"} '
+                        'or on (service_name, instance) '
+                        '(0 * up{job=~"tresor-public|eds-tresor-public"}))) * 301)'
+                    )
                 },
             )
             response.raise_for_status()
@@ -242,6 +230,69 @@ async def fetch_application_telemetry_status(
     return results
 
 
+async def fetch_application_metrics(
+    service_name: str,
+    prometheus_url: str,
+) -> dict[str, list | str | None]:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{prometheus_url}/api/v1/query",
+                params={"query": f'{{service_name="{service_name}"}}'},
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        logger.warning(
+            "Impossible de récupérer les métriques de %s depuis Prometheus.",
+            service_name,
+            exc_info=True,
+        )
+        return {"metrics": [], "error": "Prometheus est indisponible."}
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    samples = data.get("result") if isinstance(data, dict) else None
+    status = payload.get("status") if isinstance(payload, dict) else None
+    if status != "success" or not isinstance(samples, list):
+        logger.warning(
+            "Prometheus a renvoyé une réponse de métriques invalide pour %s.",
+            service_name,
+        )
+        return {"metrics": [], "error": "La réponse de Prometheus est invalide."}
+
+    metrics_by_name: dict[str, list[dict[str, str | list[str]]]] = {}
+    for sample in samples:
+        if not isinstance(sample, dict):
+            continue
+        labels = sample.get("metric")
+        value = sample.get("value")
+        if not isinstance(labels, dict) or not isinstance(value, list) or len(value) < 2:
+            continue
+        metric_name = labels.get("__name__")
+        if not isinstance(metric_name, str) or not re.fullmatch(
+            r"[a-zA-Z_:][a-zA-Z0-9_:]*", metric_name
+        ):
+            continue
+        label_values = [
+            f"{name}={label_value}"
+            for name, label_value in sorted(labels.items())
+            if isinstance(name, str)
+            and isinstance(label_value, str)
+            and name not in {"__name__", "service_name"}
+        ]
+        metrics_by_name.setdefault(metric_name, []).append(
+            {"labels": label_values, "value": str(value[1])}
+        )
+
+    return {
+        "metrics": [
+            {"name": name, "series": series}
+            for name, series in sorted(metrics_by_name.items())
+        ],
+        "error": None,
+    }
+
+
 def get_current_user(
     request: Request,
     session: Session = Depends(get_database),
@@ -328,6 +379,7 @@ def application_form_values(application: Application | None = None) -> dict:
             "description": "",
             "language": "",
             "repository_url": "",
+            "website_url": "",
             "version": "",
             "internship_start": "",
             "internship_end": "",
@@ -339,6 +391,7 @@ def application_form_values(application: Application | None = None) -> dict:
         "description": application.description,
         "language": application.language,
         "repository_url": application.repository_url,
+        "website_url": application.website_url,
         "version": application.version,
         "internship_start": serialize_value(application.internship_start) or "",
         "internship_end": serialize_value(application.internship_end) or "",
@@ -409,6 +462,7 @@ def filtered_applications(
                 Application.name.ilike(pattern),
                 Application.service_name.ilike(pattern),
                 Application.description.ilike(pattern),
+                Application.website_url.ilike(pattern),
                 User.name.ilike(pattern),
             )
         )
@@ -452,6 +506,7 @@ def validate_application(
     description: str,
     language: str,
     repository_url: str,
+    website_url: str,
     version: str,
     internship_start: str,
     internship_end: str,
@@ -462,6 +517,7 @@ def validate_application(
         "description": description.strip(),
         "language": language.strip(),
         "repository_url": repository_url.strip(),
+        "website_url": website_url.strip(),
         "version": version.strip(),
         "internship_start": internship_start.strip(),
         "internship_end": internship_end.strip(),
@@ -474,6 +530,18 @@ def validate_application(
         parsed_url = urlparse(values["repository_url"])
         if parsed_url.scheme not in {"http", "https", "ssh"} or not parsed_url.netloc:
             return values, "Saisissez une adresse de dépôt HTTP(S) ou SSH valide."
+    if values["website_url"]:
+        try:
+            parsed_url = urlparse(values["website_url"])
+        except ValueError:
+            parsed_url = None
+        if (
+            len(values["website_url"]) > 500
+            or parsed_url is None
+            or parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.netloc
+        ):
+            return values, "Saisissez une adresse de site web commençant par http:// ou https://."
     if len(values["description"]) > 4000:
         return values, "La description ne peut pas dépasser 4 000 caractères."
     if len(values["name"]) > 120 or len(values["service_name"]) > 120:
@@ -497,7 +565,7 @@ async def home(request: Request):
     if request.session.get("user_id"):
         return redirect(
             request,
-            "/grafana/d/stagiaires-applications/suivi-des-applications"
+            "/grafana/"
             if request.session.get("role") == "checker"
             else "/applications",
         )
@@ -512,7 +580,7 @@ async def login_page(
     if request.session.get("user_id"):
         return redirect(
             request,
-            "/grafana/d/stagiaires-applications/suivi-des-applications"
+            "/grafana/"
             if request.session.get("role") == "checker"
             else "/applications",
         )
@@ -544,7 +612,7 @@ async def login(
     request.session["role"] = user.role
     return redirect(
         request,
-        "/grafana/d/stagiaires-applications/suivi-des-applications"
+        "/grafana/"
         if user.role == "checker"
         else "/applications",
         "Connexion réussie.",
@@ -567,6 +635,12 @@ async def grafana_auth(
         status_code=200,
         headers={"X-WEBAUTH-USER": f"portal-user-{user.id}"},
     )
+
+
+@router.get("/auth/grafana/logout", include_in_schema=False)
+async def grafana_logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=303)
 
 
 @router.post("/logout", include_in_schema=False)
@@ -736,6 +810,36 @@ async def application_list(
     )
 
 
+@router.get("/applications/{application_id}/metrics", include_in_schema=False)
+async def application_metrics(
+    application_id: int,
+    request: Request,
+    session: Session = Depends(get_database),
+    user: User = Depends(get_current_user),
+):
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Réservé aux administrateurs.",
+        )
+    application = get_visible_application(session, application_id, user)
+    metrics = await fetch_application_metrics(
+        application.service_name,
+        request.app.state.prometheus_url,
+    )
+    return render(
+        request,
+        "application_metrics.html",
+        {
+            "current_user": user,
+            "application": application,
+            "metrics": metrics["metrics"],
+            "metrics_error": metrics["error"],
+            "page_title": f"Métriques · {application.name}",
+        },
+    )
+
+
 @router.get("/applications/export.csv", include_in_schema=False)
 async def application_export(
     request: Request,
@@ -774,6 +878,7 @@ async def application_export(
             "Langage",
             "Version",
             "Dépôt Git",
+            "Site web",
             "Début du projet",
             "Déploiement du projet",
             "Archivage",
@@ -790,6 +895,7 @@ async def application_export(
                 application.language,
                 application.version,
                 application.repository_url,
+                application.website_url,
                 serialize_value(application.internship_start),
                 serialize_value(application.internship_end),
                 "Archivée" if application.archived else "En suivi",
@@ -826,6 +932,7 @@ async def application_create(
     description: str = Form(default=""),
     language: str = Form(default=""),
     repository_url: str = Form(default=""),
+    website_url: str = Form(default=""),
     version: str = Form(default=""),
     internship_start: str = Form(default=""),
     internship_end: str = Form(default=""),
@@ -838,6 +945,7 @@ async def application_create(
         description,
         language,
         repository_url,
+        website_url,
         version,
         internship_start,
         internship_end,
@@ -871,6 +979,7 @@ async def application_create(
         description=values["description"],
         language=values["language"],
         repository_url=values["repository_url"],
+        website_url=values["website_url"],
         version=values["version"],
         internship_start=values["_start"],
         internship_end=values["_end"],
@@ -926,216 +1035,17 @@ async def application_detail(
         {
             "current_user": user,
             "application": application,
+            "grafana_dashboard_url": GRAFANA_DASHBOARDS.get(
+                application.service_name
+            ),
             "health": health,
             "otel_docker_endpoint": "http://portal-otel-gateway:4317",
             "otel_host_endpoint": "http://localhost:4317",
             "history_entries": history_entries,
             "can_edit": user.role in APPLICATION_MANAGER_ROLES,
-            "code_studio_url": f"/applications/{application.id}/studio",
             "page_title": application.name,
         },
     )
-
-
-@router.get("/applications/{application_id}/studio", include_in_schema=False)
-async def application_code_studio(
-    application_id: int,
-    request: Request,
-    session: Session = Depends(get_database),
-    user: User = Depends(get_current_user),
-):
-    require_writer(user)
-    application = get_visible_application(session, application_id, user)
-    if application.archived:
-        raise HTTPException(
-            status_code=409,
-            detail="Réactivez cette application avant de modifier son code.",
-        )
-    code = (
-        session.query(ApplicationCode)
-        .filter(ApplicationCode.application_id == application.id)
-        .one_or_none()
-    )
-    return render(
-        request,
-        "application_studio.html",
-        {
-            "current_user": user,
-            "application": application,
-            "html_code": code.html_code if code else STARTER_HTML,
-            "css_code": code.css_code if code else STARTER_CSS,
-            "js_code": code.js_code if code else STARTER_JS,
-            "code_revision": code.revision if code else 0,
-            "code_updated_at": code.updated_at if code else None,
-            "code_updated_by": code.updated_by_id if code else None,
-            "code_error": None,
-            "page_title": f"Atelier de code · {application.name}",
-        },
-    )
-
-
-@router.post(
-    "/applications/{application_id}/studio",
-    include_in_schema=False,
-)
-async def save_application_code(
-    application_id: int,
-    request: Request,
-    session: Session = Depends(get_database),
-    user: User = Depends(get_current_user),
-    _: None = Depends(verify_csrf),
-    html_code: str = Form(default=""),
-    css_code: str = Form(default=""),
-    js_code: str = Form(default=""),
-    revision: int = Form(default=0, ge=0),
-):
-    require_writer(user)
-    application = get_visible_application(session, application_id, user)
-    if application.archived:
-        raise HTTPException(
-            status_code=409,
-            detail="Réactivez cette application avant de modifier son code.",
-        )
-
-    current = (
-        session.query(ApplicationCode)
-        .filter(ApplicationCode.application_id == application.id)
-        .one_or_none()
-    )
-    current_revision = current.revision if current else 0
-    values = {
-        "html_code": html_code,
-        "css_code": css_code,
-        "js_code": js_code,
-    }
-    error = None
-    if any(len(value) > MAX_CODE_LENGTH for value in values.values()):
-        error = (
-            "Chaque fichier est limité à 20 000 caractères. "
-            "Réduisez son contenu puis réessayez."
-        )
-    elif revision != current_revision:
-        error = (
-            "Une version plus récente a été enregistrée depuis l’ouverture "
-            "de cet atelier. Copiez vos changements, rechargez la page et "
-            "fusionnez-les avant de réessayer."
-        )
-
-    if error:
-        return render(
-            request,
-            "application_studio.html",
-            {
-                "current_user": user,
-                "application": application,
-                **values,
-                "code_revision": revision,
-                "code_updated_at": current.updated_at if current else None,
-                "code_updated_by": current.updated_by_id if current else None,
-                "code_error": error,
-                "page_title": f"Atelier de code · {application.name}",
-            },
-            status_code=409 if revision != current_revision else 422,
-        )
-
-    def conflict_response(message: str):
-        latest = (
-            session.query(ApplicationCode)
-            .filter(ApplicationCode.application_id == application.id)
-            .one_or_none()
-        )
-        return render(
-            request,
-            "application_studio.html",
-            {
-                "current_user": user,
-                "application": application,
-                **values,
-                "code_revision": revision,
-                "code_updated_at": latest.updated_at if latest else None,
-                "code_updated_by": latest.updated_by_id if latest else None,
-                "code_error": message,
-                "page_title": f"Atelier de code · {application.name}",
-            },
-            status_code=409,
-        )
-
-    if current is None:
-        current = ApplicationCode(application_id=application.id)
-        current.html_code = html_code
-        current.css_code = css_code
-        current.js_code = js_code
-        current.revision = 1
-        current.updated_by_id = user.id
-        session.add(current)
-        try:
-            session.commit()
-        except IntegrityError:
-            session.rollback()
-            return conflict_response(
-                "Une autre personne a enregistré une première version "
-                "pendant votre modification. Copiez vos changements, "
-                "rechargez la page et fusionnez-les avant de réessayer."
-            )
-    else:
-        updated = (
-            session.query(ApplicationCode)
-            .filter(
-                ApplicationCode.application_id == application.id,
-                ApplicationCode.revision == revision,
-            )
-            .update(
-                {
-                    ApplicationCode.html_code: html_code,
-                    ApplicationCode.css_code: css_code,
-                    ApplicationCode.js_code: js_code,
-                    ApplicationCode.revision: revision + 1,
-                    ApplicationCode.updated_by_id: user.id,
-                },
-                synchronize_session=False,
-            )
-        )
-        if updated != 1:
-            session.rollback()
-            return conflict_response(
-                "Une version plus récente a été enregistrée depuis l’ouverture "
-                "de cet atelier. Copiez vos changements, rechargez la page et "
-                "fusionnez-les avant de réessayer."
-            )
-        session.commit()
-    return redirect(
-        request,
-        f"/applications/{application.id}/studio",
-        f"Version {revision + 1} enregistrée. L’aperçu a été actualisé.",
-    )
-
-
-@router.get(
-    "/applications/{application_id}/preview",
-    include_in_schema=False,
-)
-async def application_code_preview(
-    application_id: int,
-    session: Session = Depends(get_database),
-    user: User = Depends(get_current_user),
-):
-    application = get_visible_application(session, application_id, user)
-    code = (
-        session.query(ApplicationCode)
-        .filter(ApplicationCode.application_id == application.id)
-        .one_or_none()
-    )
-    html_code = code.html_code if code else STARTER_HTML
-    css_code = code.css_code if code else STARTER_CSS
-    js_code = code.js_code if code else STARTER_JS
-    document = (
-        "<!doctype html><html lang=\"fr\"><head>"
-        "<meta charset=\"utf-8\"><meta name=\"viewport\" "
-        "content=\"width=device-width, initial-scale=1\">"
-        f"<style>{css_code}</style></head><body>{html_code}"
-        f"<script>{js_code}</script></body></html>"
-    )
-    return HTMLResponse(document)
 
 
 @router.get("/applications/{application_id}/health", include_in_schema=False)
@@ -1231,6 +1141,7 @@ async def application_update(
     description: str = Form(default=""),
     language: str = Form(default=""),
     repository_url: str = Form(default=""),
+    website_url: str = Form(default=""),
     version: str = Form(default=""),
     internship_start: str = Form(default=""),
     internship_end: str = Form(default=""),
@@ -1244,6 +1155,7 @@ async def application_update(
         description,
         language,
         repository_url,
+        website_url,
         version,
         internship_start,
         internship_end,
@@ -1295,6 +1207,7 @@ async def application_update(
         "description": values["description"],
         "language": values["language"],
         "repository_url": values["repository_url"],
+        "website_url": values["website_url"],
         "version": values["version"],
         "internship_start": values["_start"],
         "internship_end": values["_end"],
@@ -1331,6 +1244,23 @@ async def application_archive(
     session.commit()
     message = "Application archivée." if archived else "Application réactivée."
     return redirect(request, f"/applications/{application.id}", message)
+
+
+@router.get("/admin/integration-guide", include_in_schema=False)
+async def admin_integration_guide(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs.")
+    return render(
+        request,
+        "admin_integration_guide.html",
+        {
+            "current_user": user,
+            "page_title": "Guide d’intégration",
+        },
+    )
 
 
 @router.get("/users", include_in_schema=False)

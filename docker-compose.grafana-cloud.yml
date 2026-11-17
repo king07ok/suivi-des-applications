@@ -1,0 +1,27 @@
+services:
+  prometheus:
+    volumes:
+      - ./prometheus-cloud.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana-alloy:
+    image: grafana/alloy:v1.8.3
+    restart: unless-stopped
+    profiles:
+      - grafana-cloud
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12346
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      GRAFANA_CLOUD_PROMETHEUS_URL: ${GRAFANA_CLOUD_PROMETHEUS_URL:?Set GRAFANA_CLOUD_PROMETHEUS_URL in .env}
+      GRAFANA_CLOUD_PROMETHEUS_USER: ${GRAFANA_CLOUD_PROMETHEUS_USER:?Set GRAFANA_CLOUD_PROMETHEUS_USER in .env}
+      GRAFANA_CLOUD_PROMETHEUS_TOKEN: ${GRAFANA_CLOUD_PROMETHEUS_TOKEN:?Set GRAFANA_CLOUD_PROMETHEUS_TOKEN in .env}
+    volumes:
+      - ./grafana-cloud.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+    networks:
+      - backend
+
+volumes:
+  alloy_data:

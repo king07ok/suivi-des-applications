@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -104,7 +104,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(up{job=~\"otel-collector|tempo|loki|grafana|alertmanager\"}) or vector(0)",
+          "expr": "sum(up{job=~\"otel-collector|tempo|loki|grafana|alertmanager|node-exporter\"}) or vector(0)",
           "instant": true
         }
       ],
@@ -124,7 +124,7 @@
               },
               {
                 "color": "green",
-                "value": 5
+                "value": 6
               }
             ]
           }
@@ -315,7 +315,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum by (service_name) (rate(stagiaires_app_requests_total{status_code=~\"5..\"}[5m])) / clamp_min(sum by (service_name) (rate(stagiaires_app_requests_total[5m])), 0.001)",
+          "expr": "100 * (sum by (service_name) (rate(stagiaires_app_requests_total{service_name!=\"\",status_code=~\"5..\"}[5m])) or on (service_name) (0 * sum by (service_name) (rate(stagiaires_app_requests_total{service_name!=\"\"}[5m])))) / clamp_min(sum by (service_name) (rate(stagiaires_app_requests_total{service_name!=\"\"}[5m])), 0.001)",
           "legendFormat": "{{service_name}}",
           "instant": false
         }

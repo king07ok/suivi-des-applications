@@ -30,21 +30,18 @@ exporters:
     namespace: stagiaires
     resource_to_telemetry_conversion:
       enabled: true
-  debug:
-    verbosity: basic
-
 service:
   extensions: [health_check]
   pipelines:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlp/tempo, debug]
+      exporters: [otlp/tempo]
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [prometheus, debug]
+      exporters: [prometheus]
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlphttp/loki, debug]
+      exporters: [otlphttp/loki]

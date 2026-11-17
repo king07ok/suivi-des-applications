@@ -24,8 +24,11 @@
       <a class="nav-link {% if request.url.path.startswith('/users') %}is-current{% endif %}" href="/users">
         <span class="nav-glyph" aria-hidden="true">♙</span><span>Comptes</span>
       </a>
+      <a class="nav-link {% if request.url.path.startswith('/admin/integration-guide') %}is-current{% endif %}" href="/admin/integration-guide">
+        <span class="nav-glyph" aria-hidden="true">ⓘ</span><span>Guide d’intégration</span>
+      </a>
       {% endif %}
-      <a class="nav-link" href="/grafana/d/stagiaires-applications/suivi-des-applications" target="_blank" rel="noopener">
+      <a class="nav-link" href="{{ grafana_home_url }}" target="_blank" rel="noopener">
         <span class="nav-glyph" aria-hidden="true">⌁</span><span>Supervision</span><span class="external-mark" aria-hidden="true">↗</span>
       </a>
       <a class="nav-link" href="/prometheus/" target="_blank" rel="noopener">
@@ -62,9 +65,9 @@
       </a>
       <nav aria-label="Navigation mobile">
         <a href="/applications">Applications</a>
-        {% if current_user.role == 'admin' %}<a href="/users">Comptes</a>{% endif %}
+        {% if current_user.role == 'admin' %}<a href="/users">Comptes</a><a href="/admin/integration-guide">Guide</a>{% endif %}
         <a href="/account/password">Mon compte</a>
-        <a href="/grafana/d/stagiaires-applications/suivi-des-applications">Grafana</a>
+        <a href="{{ grafana_home_url }}">Grafana</a>
         <a href="/prometheus/">Prometheus</a>
         <a href="https://slack.com" target="_blank" rel="noopener">Slack</a>
         <form action="/logout" method="post">

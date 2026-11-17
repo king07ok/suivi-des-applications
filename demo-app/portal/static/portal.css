@@ -742,6 +742,25 @@ p {
   text-decoration: underline;
 }
 
+.application-row-links {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.metric-shortcut {
+  flex: 0 0 auto;
+  color: #3658b7;
+  font-size: 9px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.metric-shortcut:hover {
+  text-decoration: underline;
+}
+
 .service-name {
   overflow: hidden;
   margin-top: 3px;
@@ -1024,6 +1043,146 @@ p {
 .record-sheet,
 .telemetry-sheet {
   background: #fff;
+}
+
+.metrics-sheet {
+  border: 1px solid var(--rule);
+}
+
+.admin-guide {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-guide-callout,
+.admin-guide-card {
+  border: 1px solid var(--rule);
+  background: #fff;
+}
+
+.admin-guide-callout {
+  padding: 17px 20px;
+  border-left: 3px solid var(--blue);
+}
+
+.admin-guide-callout strong {
+  color: #334f9d;
+  font-size: 12px;
+}
+
+.admin-guide-callout p {
+  margin: 5px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.admin-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-guide-card {
+  min-width: 0;
+  padding: 18px 20px;
+}
+
+.admin-guide-card h2 {
+  margin: 5px 0 12px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.admin-guide-card p,
+.admin-guide-card li {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.admin-guide-card p:last-child {
+  margin-bottom: 0;
+}
+
+.admin-guide-card ol,
+.admin-guide-card ul {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 12px;
+  padding-left: 19px;
+}
+
+.admin-guide-card code {
+  color: #334f9d;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: .92em;
+  overflow-wrap: anywhere;
+}
+
+.admin-guide-card pre {
+  overflow-x: auto;
+  margin: 12px 0;
+  padding: 12px 14px;
+  background: #f3f5f8;
+  line-height: 1.55;
+}
+
+.admin-guide-card pre code {
+  color: #29374a;
+  font-size: 10px;
+  overflow-wrap: normal;
+}
+
+.guide-index {
+  color: #788596;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .12em;
+}
+
+.metrics-note {
+  margin: 0;
+  padding: 14px 19px;
+  color: #697688;
+  font-size: 11px;
+}
+
+.metrics-table td {
+  vertical-align: top;
+}
+
+.metric-name,
+.metric-series-list code {
+  color: #334f9d;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+}
+
+.metric-series-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.metric-series-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.metric-series-list small {
+  color: #788494;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+.metrics-empty {
+  padding-top: 35px;
+  padding-bottom: 35px;
 }
 
 .sheet-heading {
@@ -1829,6 +1988,10 @@ p {
     display: none;
   }
 
+  .admin-guide-grid {
+    grid-template-columns: 1fr;
+  }
+
   .main-area {
     margin-left: 0;
   }
@@ -2383,210 +2546,5 @@ p {
 
   .embedded-dashboard iframe {
     height: 680px;
-  }
-}
-
-.studio-notice {
-  display: grid;
-  gap: 4px;
-  margin-bottom: 16px;
-  padding: 13px 16px;
-  border: 1px solid #c9d4ed;
-  background: #f1f4fb;
-  color: #33455e;
-}
-
-.studio-notice strong {
-  color: #294796;
-}
-
-.studio-notice span,
-.studio-section-heading p,
-.studio-preview-help,
-.studio-file small,
-.studio-save-row span {
-  color: #596678;
-}
-
-.studio-error {
-  display: grid;
-  gap: 7px;
-}
-
-.studio-error a {
-  width: fit-content;
-  color: #8b3036;
-  font-weight: 650;
-}
-
-.studio-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr);
-  align-items: start;
-  border: 1px solid var(--rule);
-  background: var(--paper);
-}
-
-.studio-source,
-.studio-preview {
-  min-width: 0;
-}
-
-.studio-preview {
-  position: sticky;
-  top: 12px;
-  border-left: 1px solid var(--rule);
-}
-
-.studio-section-heading {
-  display: flex;
-  min-height: 74px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--rule);
-}
-
-.studio-section-heading h2 {
-  margin: 0;
-  font-size: 17px;
-}
-
-.studio-section-heading p {
-  margin: 3px 0 0;
-  font-size: 12px;
-}
-
-.studio-file {
-  border-bottom: 1px solid var(--rule);
-}
-
-.studio-file summary {
-  display: flex;
-  min-height: 43px;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 15px;
-  color: #354357;
-  cursor: pointer;
-  font-weight: 600;
-  list-style-position: inside;
-}
-
-.studio-file-kind {
-  display: inline-grid;
-  width: 34px;
-  min-height: 22px;
-  place-items: center;
-  background: var(--blue-pale);
-  color: var(--blue-dark);
-  font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 11px;
-}
-
-.studio-limit {
-  margin-left: auto;
-  color: var(--ink-soft);
-  font-size: 10px;
-  font-weight: 400;
-}
-
-.studio-file textarea {
-  display: block;
-  width: calc(100% - 30px);
-  min-height: 230px;
-  margin: 0 15px 9px;
-  padding: 13px;
-  resize: vertical;
-  border: 1px solid #334357;
-  border-radius: 0;
-  background: #1d2938;
-  color: #f0f3f8;
-  font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.55;
-  tab-size: 2;
-}
-
-.studio-file textarea:focus-visible {
-  outline-color: #9baef4;
-}
-
-.studio-file small {
-  display: block;
-  padding: 0 15px 12px;
-  font-size: 11px;
-}
-
-.studio-save-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 15px;
-}
-
-.studio-save-row span {
-  font-size: 11px;
-}
-
-.studio-preview-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #25674a;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .06em;
-}
-
-.studio-preview-state i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #3d966a;
-}
-
-.studio-preview iframe {
-  display: block;
-  width: 100%;
-  min-height: 580px;
-  border: 0;
-  background: #fff;
-}
-
-.studio-preview-help {
-  display: block;
-  padding: 10px 14px 14px;
-  border-top: 1px solid var(--rule);
-  font-size: 11px;
-}
-
-@media (max-width: 1180px) {
-  .studio-workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .studio-preview {
-    position: static;
-    border-top: 1px solid var(--rule);
-    border-left: 0;
-  }
-}
-
-@media (max-width: 640px) {
-  .studio-section-heading,
-  .studio-save-row {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .studio-limit {
-    display: none;
-  }
-
-  .studio-preview iframe {
-    min-height: 420px;
   }
 }

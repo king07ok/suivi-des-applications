@@ -13,6 +13,10 @@ from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.view import (
+    ExplicitBucketHistogramAggregation,
+    View,
+)
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -20,6 +24,15 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from portal.app import create_app
 
 service_name = os.getenv("OTEL_SERVICE_NAME", "demo-stagiaire")
+try:
+    metric_export_interval_millis = int(
+        os.getenv("OTEL_METRIC_EXPORT_INTERVAL", "10000")
+    )
+except ValueError as error:
+    raise RuntimeError("OTEL_METRIC_EXPORT_INTERVAL doit être un entier positif.") from error
+if metric_export_interval_millis <= 0:
+    raise RuntimeError("OTEL_METRIC_EXPORT_INTERVAL doit être un entier positif.")
+
 resource = Resource.create(
     {
         "service.name": service_name,
@@ -34,10 +47,39 @@ trace.set_tracer_provider(tracer_provider)
 
 metric_reader = PeriodicExportingMetricReader(
     OTLPMetricExporter(),
-    export_interval_millis=10000,
+    export_interval_millis=metric_export_interval_millis,
 )
 metrics.set_meter_provider(
-    MeterProvider(resource=resource, metric_readers=[metric_reader])
+    MeterProvider(
+        resource=resource,
+        metric_readers=[metric_reader],
+        views=[
+            View(
+                instrument_name="app.database.operation.duration",
+                aggregation=ExplicitBucketHistogramAggregation(
+                    boundaries=[
+                        0.001,
+                        0.005,
+                        0.01,
+                        0.025,
+                        0.05,
+                        0.1,
+                        0.25,
+                        0.5,
+                        1,
+                        2.5,
+                        5,
+                        10,
+                        25,
+                        50,
+                        100,
+                        250,
+                        500,
+                    ]
+                ),
+            )
+        ],
+    )
 )
 meter = metrics.get_meter("demo-app")
 application_requests = meter.create_counter(

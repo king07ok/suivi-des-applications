@@ -41,6 +41,11 @@
         <input id="repository_url" name="repository_url" type="url" maxlength="500" value="{{ values.repository_url }}" placeholder="https://git.example/organisation/projet">
       </div>
       <div class="field-group">
+        <label for="website_url">Site web (URL réelle)</label>
+        <input id="website_url" name="website_url" type="url" maxlength="500" value="{{ values.website_url }}" placeholder="https://mon-application.example.fr" aria-describedby="website_url_hint">
+        <small id="website_url_hint">Adresse du site déployé, distincte du dépôt Git.</small>
+      </div>
+      <div class="field-group">
         <label for="version">Version</label>
         <input id="version" name="version" type="text" maxlength="80" value="{{ values.version }}" placeholder="Ex. 1.0.0">
       </div>

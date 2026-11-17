@@ -41,6 +41,7 @@ services:
       OTEL_SERVICE_NAME: demo-stagiaire
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_METRIC_EXPORT_INTERVAL: 10000
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.namespace=stagiaires
     depends_on:
       otel-collector:
@@ -109,9 +110,73 @@ services:
       - backend
       - prometheus_api
       - prometheus_web
+      - blackbox_probe
     depends_on:
       alertmanager:
         condition: service_healthy
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:5bf5d43-5bf5d43ac6f60d7ee36a13b4d5b4a78ad2d0abc7@sha256:bd7c00644d65e6c9fc2c151cab70d2e86d7fe3e0182cfb9863120ec2e017cf01
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    command:
+      - --docker_only=true
+    networks:
+      - backend
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/containerd/.+|var/lib/kubelet/.+)($|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro
+    networks:
+      - backend
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.26.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/blackbox_exporter/blackbox.yml"]
+    volumes:
+      - ./blackbox.yml:/etc/blackbox_exporter/blackbox.yml:ro
+    networks:
+      - blackbox_probe
+
+  obi:
+    image: otel/ebpf-instrument:v1.0.0@sha256:a68d70e934260f72540f157ccf4fb4adfa38f11de060d7d905696dad6a3fca02
+    restart: unless-stopped
+    command: ["--config=/etc/obi/obi.yml"]
+    pid: host
+    cap_add:
+      - BPF
+      - PERFMON
+      - DAC_READ_SEARCH
+      - CHECKPOINT_RESTORE
+      - SYS_PTRACE
+    environment:
+      OTEL_EBPF_ENFORCE_SYS_CAPS: "true"
+      OTEL_EBPF_EXCLUDE_OTEL_INSTRUMENTED_SERVICES: "false"
+    volumes:
+      - ./obi.yml:/etc/obi/obi.yml:ro
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+    networks:
+      - telemetry
 
   alertmanager:
     image: prom/alertmanager:v0.28.1
@@ -173,6 +238,7 @@ services:
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?Copy .env.example to .env}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_AUTH_SIGNOUT_REDIRECT_URL: /auth/grafana/logout
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_AUTH_PROXY_ENABLED: "true"
@@ -208,6 +274,7 @@ networks:
     internal: true
   prometheus_web:
     internal: true
+  blackbox_probe:
 
 volumes:
   caddy_data:

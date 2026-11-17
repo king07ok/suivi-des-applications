@@ -1,0 +1,1242 @@
+{
+  "uid": "jenkins-monitoring",
+  "title": "Supervision Jenkins",
+  "description": "Métriques Jenkins et TLS/HTTP disponibles, à condition que l’endpoint /prometheus/ reste accessible.",
+  "tags": [
+    "jenkins",
+    "ci-cd",
+    "http",
+    "tls"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 7,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations et alertes",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "État du scrape Jenkins",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"jenkins\"}",
+          "legendFormat": "Prometheus",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "État de collecte de l’endpoint de métriques Jenkins.",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Réponse de la sonde HTTPS",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "legendFormat": "HTTPS",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "La sonde Blackbox vérifie la disponibilité HTTP et TLS.",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Code HTTP de la cible",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_http_status_code{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "legendFormat": "HTTP",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Temps de réponse de la sonde",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_duration_seconds{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "legendFormat": "Durée totale"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Protocole HTTP, TLS et chiffrement",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_http_ssl{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "legendFormat": "HTTPS activé",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "probe_http_version{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "legendFormat": "Version HTTP",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Métadonnées retournées par la sonde HTTPS.",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Collecte Blackbox",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "scrape_duration_seconds{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "legendFormat": "Durée scrape"
+        },
+        {
+          "refId": "B",
+          "expr": "scrape_samples_scraped{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "legendFormat": "Séries reçues"
+        },
+        {
+          "refId": "C",
+          "expr": "scrape_samples_post_metric_relabeling{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "legendFormat": "Séries conservées"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Disponibilité HTTPS sur 24 h",
+      "description": "Pourcentage des sondes HTTPS réussies sur les dernières 24 heures.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * avg_over_time(probe_success{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}[24h])",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Latence HTTPS p95 sur 24 h",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, probe_duration_seconds{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}[24h])",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Temps de fonctionnement Jenkins",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_jenkins_uptime{job=\"jenkins\"}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Charge CPU système Jenkins (x100, p95 sur 5 min)",
+      "description": "Échelle x100 fournie par Jenkins, pas un pourcentage CPU standard de l’hôte.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "system_cpu_load_x100_window_5m{job=\"jenkins\",quantile=\"0.95\"}",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Utilisation de la mémoire heap",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * vm_memory_heap_usage{job=\"jenkins\"}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Requêtes HTTP actives",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 40
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "http_activeRequests{job=\"jenkins\"}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Débit des réponses HTTP par classe",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 40
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_responseCodes_ok_total{job=\"jenkins\"}[5m])) + sum(rate(http_responseCodes_created_total{job=\"jenkins\"}[5m])) + sum(rate(http_responseCodes_noContent_total{job=\"jenkins\"}[5m])) + sum(rate(http_responseCodes_notModified_total{job=\"jenkins\"}[5m]))",
+          "legendFormat": "2xx"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(http_responseCodes_badRequest_total{job=\"jenkins\"}[5m])) + sum(rate(http_responseCodes_forbidden_total{job=\"jenkins\"}[5m])) + sum(rate(http_responseCodes_notFound_total{job=\"jenkins\"}[5m]))",
+          "legendFormat": "4xx"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(http_responseCodes_serverError_total{job=\"jenkins\"}[5m])) + sum(rate(http_responseCodes_serviceUnavailable_total{job=\"jenkins\"}[5m]))",
+          "legendFormat": "5xx"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Exécuteurs Jenkins et file d’attente",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_jenkins_executors_busy{job=\"jenkins\"}",
+          "legendFormat": "Occupés"
+        },
+        {
+          "refId": "B",
+          "expr": "prometheus_jenkins_executors_idle{job=\"jenkins\"}",
+          "legendFormat": "Libres"
+        },
+        {
+          "refId": "C",
+          "expr": "prometheus_jenkins_executors_queue_length{job=\"jenkins\"}",
+          "legendFormat": "File d’attente"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Nœuds Jenkins en ligne et hors ligne",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "jenkins_node_online_value{job=\"jenkins\"}",
+          "legendFormat": "En ligne",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "jenkins_node_offline_value{job=\"jenkins\"}",
+          "legendFormat": "Hors ligne",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "name"
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Builds disponibles par pipeline",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 56
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_jenkins_builds_available_builds_count{job=\"jenkins\"}",
+          "legendFormat": "{{repo}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Santé des builds par pipeline",
+      "description": "Score de santé Jenkins pour les pipelines qui publient cette métrique.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 64
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_jenkins_builds_health_score{job=\"jenkins\"}",
+          "legendFormat": "{{repo}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Tests du dernier build par pipeline",
+      "description": "Nombre total de tests et tests en échec lors du dernier build collecté.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 64
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_jenkins_builds_last_build_tests_total{job=\"jenkins\"}",
+          "legendFormat": "{{repo}} — total"
+        },
+        {
+          "refId": "B",
+          "expr": "prometheus_jenkins_builds_last_build_tests_failing{job=\"jenkins\"}",
+          "legendFormat": "{{repo}} — en échec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Durée du dernier build par pipeline",
+      "description": "Durée de compilation et attente avant exécution du dernier build collecté.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 72
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_jenkins_builds_last_build_duration_milliseconds{job=\"jenkins\"}",
+          "legendFormat": "{{repo}} — build"
+        },
+        {
+          "refId": "B",
+          "expr": "prometheus_jenkins_builds_last_build_waiting_milliseconds{job=\"jenkins\"}",
+          "legendFormat": "{{repo}} — attente"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Utilisation de la mémoire non-heap JVM",
+      "description": "Proportion utilisée de la mémoire non-heap de la JVM Jenkins.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 12,
+        "y": 72
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * vm_memory_non_heap_usage{job=\"jenkins\"}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Charge CPU JVM",
+      "description": "Charge CPU du processus Jenkins, exprimée en pourcentage par l’exporter JVM.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 80
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * vm_cpu_load{job=\"jenkins\"}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Santé générale Jenkins",
+      "description": "Score de santé Jenkins normalisé entre 0 et 1.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 80
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "jenkins_health_check_score{job=\"jenkins\"}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Projets et plugins Jenkins",
+      "description": "Nombre de projets activés/désactivés et état des plugins Jenkins.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 85
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "jenkins_project_enabled_count_value{job=\"jenkins\"}",
+          "legendFormat": "Projets activés"
+        },
+        {
+          "refId": "B",
+          "expr": "jenkins_project_disabled_count_value{job=\"jenkins\"}",
+          "legendFormat": "Projets désactivés"
+        },
+        {
+          "refId": "C",
+          "expr": "jenkins_plugins_active{job=\"jenkins\"}",
+          "legendFormat": "Plugins actifs"
+        },
+        {
+          "refId": "D",
+          "expr": "jenkins_plugins_failed{job=\"jenkins\"}",
+          "legendFormat": "Plugins en échec"
+        },
+        {
+          "refId": "E",
+          "expr": "jenkins_plugins_withUpdate{job=\"jenkins\"}",
+          "legendFormat": "Plugins avec mise à jour"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "Threads et blocages JVM",
+      "description": "Threads JVM actifs, threads daemon et détections de deadlock.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 93
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vm_count{job=\"jenkins\"}",
+          "legendFormat": "Threads JVM",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "vm_daemon_count{job=\"jenkins\"}",
+          "legendFormat": "Threads daemon",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "vm_deadlock_count{job=\"jenkins\"}",
+          "legendFormat": "Deadlocks",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "name"
+      }
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Builds réussis et échoués par pipeline",
+      "description": "Compteurs cumulés de builds terminés avec succès ou en échec.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 93
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_jenkins_builds_success_build_count_total{job=\"jenkins\"}",
+          "legendFormat": "{{repo}} — réussis"
+        },
+        {
+          "refId": "B",
+          "expr": "prometheus_jenkins_builds_failed_build_count_total{job=\"jenkins\"}",
+          "legendFormat": "{{repo}} — échoués"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Temps de résolution DNS Jenkins",
+      "description": "Temps DNS mesuré par la sonde HTTPS Blackbox vers Jenkins.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 101
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_dns_lookup_time_seconds{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "legendFormat": "Résolution DNS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Mémoire de l’ancienne génération JVM",
+      "description": "Mémoire utilisée dans l’ancienne génération G1 de la JVM Jenkins.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 101
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vm_memory_pools_G1_Old_Gen_used{job=\"jenkins\"}",
+          "legendFormat": "Utilisée"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

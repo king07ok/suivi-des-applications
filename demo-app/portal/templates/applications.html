@@ -28,7 +28,7 @@ FORM: Opérations, candidat de composition 3 (registre + marge de repères), mon
 <section class="register-layout" aria-label="Registre des applications">
   <div class="register-main">
     <form class="filter-bar" method="get" action="/applications">
-      <label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Rechercher</span><input name="q" value="{{ filters.q }}" placeholder="Nom, service ou responsable" maxlength="120"></label>
+      <label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Rechercher</span><input name="q" value="{{ filters.q }}" placeholder="Nom, service, site ou responsable" maxlength="120"></label>
       <label class="filter-select"><span class="sr-only">État</span><select name="status">
         <option value="active" {% if filters.status == 'active' %}selected{% endif %}>En suivi</option>
         <option value="archived" {% if filters.status == 'archived' %}selected{% endif %}>Archivées</option>
@@ -66,7 +66,7 @@ FORM: Opérations, candidat de composition 3 (registre + marge de repères), mon
             <td data-label="Application">
               <div class="application-name-cell">
                 <span class="service-state {% if application.archived %}state-archived{% else %}state-followed{% endif %}" aria-label="{% if application.archived %}Archivée{% else %}En suivi{% endif %}"></span>
-                <span><a class="table-primary-link" href="/applications/{{ application.id }}">{{ application.name }}</a><small class="service-name">{{ application.service_name }}</small><span class="health-indicator health-{{ health_by_service[application.service_name].status }}"><i aria-hidden="true"></i>{{ health_by_service[application.service_name].label }}</span></span>
+                <span><span class="application-row-links"><a class="table-primary-link" href="/applications/{{ application.id }}">{{ application.name }}</a>{% if current_user.role == 'admin' %}<a class="metric-shortcut" href="/applications/{{ application.id }}/metrics" aria-label="Afficher les métriques disponibles pour {{ application.name }}">Métriques <span aria-hidden="true">→</span></a>{% endif %}</span><small class="service-name">{{ application.service_name }}</small>{% if application.website_url %}<a class="text-link" href="{{ application.website_url }}" target="_blank" rel="noopener noreferrer">Site web <span aria-hidden="true">↗</span></a>{% endif %}<span class="health-indicator health-{{ health_by_service[application.service_name].status }}"><i aria-hidden="true"></i>{{ health_by_service[application.service_name].label }}</span></span>
               </div>
             </td>
             <td data-label="Responsable"><span class="owner-cell"><span class="avatar avatar-small" aria-hidden="true">{{ application.owner.name[:1]|upper }}</span>{{ application.owner.name }}</span></td>

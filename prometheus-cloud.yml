@@ -1,0 +1,104 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+remote_write:
+  - url: http://grafana-alloy:12345/api/v1/metrics/write
+
+scrape_configs:
+  - job_name: prometheus
+    metrics_path: /prometheus/metrics
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]
+  - job_name: tempo
+    static_configs:
+      - targets: ["tempo:3200"]
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+  - job_name: grafana
+    metrics_path: /grafana/metrics
+    static_configs:
+      - targets: ["grafana:3000"]
+  - job_name: cadvisor
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+  - job_name: node-exporter
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["node-exporter:9100"]
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+  - job_name: jenkins
+    scheme: https
+    metrics_path: /prometheus/
+    scrape_interval: 30s
+    enable_http2: false
+    http_headers:
+      ngrok-skip-browser-warning:
+        values: ["true"]
+    static_configs:
+      - targets: ["fineness-subzero-buccaneer.ngrok-free.dev"]
+        labels:
+          service_name: jenkins
+  - job_name: jenkins-tls
+    metrics_path: /probe
+    params:
+      module: [https_2xx_ngrok]
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["https://fineness-subzero-buccaneer.ngrok-free.dev/login"]
+        labels:
+          service_name: jenkins
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+  - job_name: tresor-public
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["http://192.168.193.113:5173/"]
+        labels:
+          service_name: tresor-public
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+  - job_name: eds-tresor-public
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["http://192.168.193.113:30080/"]
+        labels:
+          service_name: eds-tresor-public
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

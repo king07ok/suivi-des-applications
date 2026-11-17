@@ -39,6 +39,7 @@ class Application(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     language: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     repository_url: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    website_url: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     version: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     internship_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     internship_end: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -56,28 +57,6 @@ class Application(Base):
         back_populates="application",
         cascade="all, delete-orphan",
         order_by="ApplicationHistory.created_at.desc()",
-    )
-
-
-class ApplicationCode(Base):
-    __tablename__ = "application_code"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    application_id: Mapped[int] = mapped_column(
-        ForeignKey("applications.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
-    html_code: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    css_code: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    js_code: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    updated_by_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
 
 
