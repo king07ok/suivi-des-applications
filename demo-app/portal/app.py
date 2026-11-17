@@ -9,10 +9,11 @@ from typing import Any
 from opentelemetry import metrics
 from opentelemetry.metrics import Observation
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, event, inspect
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
@@ -266,7 +267,10 @@ def create_app(
         session_cookie="stagiaires_session",
         max_age=60 * 60 * 8,
         same_site="lax",
-        https_only=False,
+        https_only=(
+            os.getenv("PORTAL_SESSION_COOKIE_SECURE", "false").strip().lower()
+            == "true"
+        ),
     )
     application.mount(
         "/static",
@@ -299,8 +303,16 @@ def create_app(
         return response
 
     @application.get("/health", include_in_schema=False)
-    async def health():
-        return {"status": "ok"}
+    async def health(request: Request):
+        try:
+            with request.app.state.engine.connect() as connection:
+                connection.exec_driver_sql("SELECT 1")
+        except SQLAlchemyError:
+            return JSONResponse(
+                {"status": "unavailable", "database": "unavailable"},
+                status_code=503,
+            )
+        return {"status": "ok", "database": "ok"}
 
     @application.get("/demo/error", include_in_schema=False)
     async def demo_error():

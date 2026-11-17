@@ -6,12 +6,10 @@ modules:
       method: GET
       preferred_ip_protocol: ip4
       follow_redirects: true
-  https_2xx_ngrok:
+  https_2xx:
     prober: http
     timeout: 8s
     http:
       method: GET
       preferred_ip_protocol: ip4
       follow_redirects: true
-      headers:
-        ngrok-skip-browser-warning: "true"

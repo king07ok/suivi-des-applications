@@ -50,7 +50,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"tresor-public\",instance=\"http://192.168.193.113:5173/\"}",
+          "expr": "probe_success{job=\"tresor-public\",service_name=\"tresor-public\"}",
           "instant": true
         }
       ],
@@ -121,7 +121,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_http_status_code{job=\"tresor-public\",instance=\"http://192.168.193.113:5173/\"}",
+          "expr": "probe_http_status_code{job=\"tresor-public\",service_name=\"tresor-public\"}",
           "instant": true
         }
       ],
@@ -163,7 +163,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_duration_seconds{job=\"tresor-public\",instance=\"http://192.168.193.113:5173/\"}",
+          "expr": "probe_duration_seconds{job=\"tresor-public\",service_name=\"tresor-public\"}",
           "instant": true
         }
       ],
@@ -223,12 +223,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_duration_seconds{job=\"tresor-public\",instance=\"http://192.168.193.113:5173/\"}",
+          "expr": "probe_duration_seconds{job=\"tresor-public\",service_name=\"tresor-public\"}",
           "legendFormat": "Durée totale"
         },
         {
           "refId": "B",
-          "expr": "probe_http_duration_seconds{job=\"tresor-public\",instance=\"http://192.168.193.113:5173/\"}",
+          "expr": "probe_http_duration_seconds{job=\"tresor-public\",service_name=\"tresor-public\"}",
           "legendFormat": "{{phase}}"
         }
       ],
@@ -567,7 +567,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * avg_over_time(probe_success{job=\"tresor-public\",instance=\"http://192.168.193.113:5173/\"}[24h])",
+          "expr": "100 * avg_over_time(probe_success{job=\"tresor-public\",service_name=\"tresor-public\"}[24h])",
           "instant": true
         }
       ],
@@ -610,7 +610,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.95, probe_duration_seconds{job=\"tresor-public\",instance=\"http://192.168.193.113:5173/\"}[24h])",
+          "expr": "quantile_over_time(0.95, probe_duration_seconds{job=\"tresor-public\",service_name=\"tresor-public\"}[24h])",
           "legendFormat": "p95"
         }
       ],
@@ -650,7 +650,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_dns_lookup_time_seconds{job=\"tresor-public\",instance=\"http://192.168.193.113:5173/\"}",
+          "expr": "probe_dns_lookup_time_seconds{job=\"tresor-public\",service_name=\"tresor-public\"}",
           "legendFormat": "Résolution DNS"
         }
       ],

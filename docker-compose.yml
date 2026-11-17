@@ -5,8 +5,7 @@ services:
     image: caddy:2.9.1
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${WEB_PORT:-8080}:80"
-      - "[::1]:${WEB_PORT:-8080}:80"
+      - "${PORTAL_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8080}:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -26,6 +25,7 @@ services:
     environment:
       DATABASE_URL: sqlite:////data/portal.db
       SESSION_SECRET_KEY: ${PORTAL_SESSION_SECRET_KEY:?Set PORTAL_SESSION_SECRET_KEY in .env}
+      PORTAL_SESSION_COOKIE_SECURE: ${PORTAL_SESSION_COOKIE_SECURE:-false}
       PORTAL_ADMIN_NAME: ${PORTAL_ADMIN_NAME:-Administrateur}
       PORTAL_ADMIN_EMAIL: ${PORTAL_ADMIN_EMAIL:?Set PORTAL_ADMIN_EMAIL in .env}
       PORTAL_ADMIN_PASSWORD: ${PORTAL_ADMIN_PASSWORD:?Set PORTAL_ADMIN_PASSWORD in .env}
@@ -96,10 +96,10 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=30d
       - --web.external-url=/prometheus/
-      - --web.enable-remote-write-receiver
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./prometheus/targets:/etc/prometheus/targets:ro
       - prometheus_data:/prometheus
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/prometheus/-/ready"]

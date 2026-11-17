@@ -4,6 +4,9 @@
 
 	@prometheus path /prometheus /prometheus/*
 	handle @prometheus {
+		forward_auth demo-app:8000 {
+			uri /auth/prometheus
+		}
 		reverse_proxy prometheus:9090
 	}
 

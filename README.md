@@ -73,9 +73,11 @@ au moins 12 caractères. Ne versionnez jamais `.env`.
 
 Par défaut, le portail est servi sur <http://localhost:8080/>. Selon votre
 configuration, Grafana est disponible sous `/grafana/` et Prometheus sous
-`/prometheus/` sur le même hôte. Le compte Admin initial est créé uniquement
-lors de l'initialisation de la base; modifier `PORTAL_ADMIN_PASSWORD` après
-coup ne change pas le mot de passe d'un compte existant.
+`/prometheus/` sur le même hôte. Prometheus est réservé aux rôles Admin et
+Moniteur; les Checkers n'accèdent qu'aux tableaux Grafana. Le compte Admin
+initial est créé uniquement lors de l'initialisation de la base; modifier
+`PORTAL_ADMIN_PASSWORD` après coup ne change pas le mot de passe d'un compte
+existant.
 
 ### Arrêt et données
 
@@ -208,26 +210,35 @@ mécanisme de secrets de l'environnement ou dans un `.env` non versionné.
 privé ou Internet.** Avant le déploiement, vérifier et adapter les points
 suivants :
 
-1. **Réseau et HTTPS** — Le Compose lie actuellement Caddy à `127.0.0.1` et le
-   `Caddyfile` sert HTTP sur le port 80. Le service n'est donc pas directement
-   accessible depuis un autre poste et ne configure pas à lui seul un domaine
-   HTTPS. Décider du reverse proxy/TLS et du pare-feu avec l'administrateur
-   système avant d'ouvrir l'accès.
-2. **Cookie de session** — Le portail utilise actuellement `https_only=False`.
-   Avant de servir le site en HTTPS, activer l'attribut `Secure` du cookie et
-   tester la connexion, la navigation et la déconnexion des Checkers.
-3. **Prometheus** — Caddy relaie actuellement `/prometheus/` sans
-   authentification, et Prometheus est lancé avec
-   `--web.enable-remote-write-receiver`. Ne pas exposer cette route au réseau
-   sans contrôle d'accès; désactiver le récepteur remote-write s'il n'est pas
-   nécessaire.
+1. **Réseau et HTTPS** — Caddy sert HTTP sur le port 80. Le Compose lie par
+   défaut le port à `127.0.0.1`; configurez `PORTAL_BIND_ADDRESS` avec une
+   adresse de l'hôte seulement si le pare-feu et le reverse proxy/TLS du serveur
+   sont prêts. Ne publiez pas directement le port HTTP sur Internet.
+2. **Cookie de session** — Quand le site est servi en HTTPS, définissez
+   `PORTAL_SESSION_COOKIE_SECURE=true` dans `.env`; laissez-le à `false` pour le
+   HTTP local. Vérifiez connexion, navigation et déconnexion après le changement.
+3. **Prometheus** — La route Caddy `/prometheus/` exige une session Admin ou
+   Moniteur; les Checkers sont refusés. Le récepteur remote-write est désactivé
+   côté Prometheus; Alloy continue d'envoyer les métriques via son récepteur
+   interne. Ne publiez pas les ports internes de Prometheus sur l'hôte.
 4. **Secrets et comptes** — Créer des secrets longs et uniques pour le portail,
    Grafana, SMTP, Slack et Grafana Cloud. Protéger les fichiers d'environnement.
    Le changement du mot de passe Admin dans `.env` ne réinitialise pas le compte
    existant dans SQLite.
-5. **Cibles Prometheus** — Examiner `prometheus.yml` : il contient des cibles
-   de développement (tunnel ngrok et adresses IP privées). Les remplacer par
-   les cibles réelles du serveur ou les supprimer.
+5. **Cibles Prometheus** — Les cibles des sondes externes et de Jenkins sont
+   externalisées dans `prometheus/targets/` et laissées vides par défaut.
+   Ajoutez uniquement des adresses accessibles depuis le réseau Docker dans
+   les fichiers YAML correspondants. Exemple pour
+   `prometheus/targets/jenkins-blackbox.yml` :
+
+   ```yaml
+   - targets: ["https://jenkins.example.net/login"]
+     labels:
+       service_name: jenkins
+   ```
+
+   Pour les métriques Jenkins, ajoutez `jenkins.example.net` dans
+   `jenkins-metrics.yml` avec le même label `service_name`.
 6. **Sources OTLP distantes** — Les ports OTLP sont liés à la boucle locale et
    ne sont pas configurés avec TLS/authentification. Un serveur distant ne
    peut pas les utiliser avant une configuration réseau sécurisée.
@@ -240,6 +251,12 @@ suivants :
    déploiement ne fournit pas de haute disponibilité.
 
 ## Exploitation et dépannage
+
+Après démarrage, vérifiez `docker compose ps`, la page `/health` (qui confirme
+aussi la disponibilité de SQLite), puis l'état des cibles dans Prometheus et
+les panneaux Grafana. Après activation de HTTPS, confirmez que le cookie de
+session porte l'attribut `Secure` et que les trois rôles conservent leurs accès
+prévus.
 
 Voir l'état des conteneurs et leurs journaux :
 

@@ -737,6 +737,7 @@ class PortalIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(intern.get("/users").status_code, 403)
         self.assertEqual(intern.get("/users/new").status_code, 403)
+        self.assertEqual(intern.get("/auth/prometheus").status_code, 200)
 
         reader = TestClient(self.app)
         self.addCleanup(reader.close)
@@ -756,8 +757,41 @@ class PortalIntegrationTests(unittest.TestCase):
         grafana_auth = reader.get("/auth/grafana")
         self.assertEqual(grafana_auth.status_code, 200)
         self.assertRegex(grafana_auth.headers["x-webauth-user"], r"^portal-user-\d+$")
+        self.assertEqual(reader.get("/auth/prometheus").status_code, 403)
         self.assertEqual(reader.get("/users").status_code, 403)
         self.assertEqual(owner_a, 2)
+
+    def test_health_endpoint_checks_database_availability(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok", "database": "ok"})
+        with patch.object(
+            self.app.state.engine,
+            "connect",
+            side_effect=OperationalError("SELECT 1", {}, Exception("database offline")),
+        ):
+            unavailable = self.client.get("/health")
+        self.assertEqual(unavailable.status_code, 503)
+        self.assertEqual(
+            unavailable.json(),
+            {"status": "unavailable", "database": "unavailable"},
+        )
+
+    def test_session_cookie_secure_flag_is_configurable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict("os.environ", {"PORTAL_SESSION_COOKIE_SECURE": "true"}):
+                secure_app = create_app(
+                    database_url=f"sqlite:///{Path(temp_dir) / 'secure-cookie.db'}",
+                    session_secret_key="test-session-secret-key-with-more-than-32-bytes",
+                    initial_admin={
+                        "name": "Admin de test",
+                        "email": ADMIN_EMAIL,
+                        "password": ADMIN_PASSWORD,
+                    },
+                )
+            with TestClient(secure_app) as secure_client:
+                response = secure_client.get("/login")
+            self.assertIn("; secure", response.headers["set-cookie"].lower())
 
     def test_moniteur_can_view_and_edit_all_applications(self):
         owner_a, application_a = self.prepare_accounts_and_application()
@@ -935,6 +969,12 @@ class PortalIntegrationTests(unittest.TestCase):
         auth_redirect = unauthenticated.get("/auth/grafana", follow_redirects=False)
         self.assertEqual(auth_redirect.status_code, 303)
         self.assertEqual(auth_redirect.headers["location"], "/login")
+        prometheus_redirect = unauthenticated.get(
+            "/auth/prometheus",
+            follow_redirects=False,
+        )
+        self.assertEqual(prometheus_redirect.status_code, 303)
+        self.assertEqual(prometheus_redirect.headers["location"], "/login")
         self.assertEqual(
             self.login(
                 reader,
@@ -954,6 +994,8 @@ class PortalIntegrationTests(unittest.TestCase):
         self.assertEqual(reader.get("/account/password").status_code, 403)
         self.assertEqual(reader.get("/users").status_code, 403)
         self.assertEqual(reader.get("/users/new").status_code, 403)
+        prometheus_auth = reader.get("/auth/prometheus", follow_redirects=False)
+        self.assertEqual(prometheus_auth.status_code, 403)
         grafana_logout = reader.get(
             "/auth/grafana/logout",
             follow_redirects=False,

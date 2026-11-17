@@ -637,6 +637,26 @@ async def grafana_auth(
     )
 
 
+@router.get("/auth/prometheus", include_in_schema=False)
+async def prometheus_auth(
+    request: Request,
+    session: Session = Depends(get_database),
+):
+    user_id = request.session.get("user_id")
+    if not isinstance(user_id, int):
+        return RedirectResponse("/login", status_code=303)
+    user = session.get(User, user_id)
+    if user is None or not user.is_active:
+        request.session.clear()
+        return RedirectResponse("/login", status_code=303)
+    if user.role == "checker":
+        raise HTTPException(
+            status_code=403,
+            detail="Le rôle Checker donne uniquement accès aux tableaux Grafana.",
+        )
+    return Response(status_code=200)
+
+
 @router.get("/auth/grafana/logout", include_in_schema=False)
 async def grafana_logout(request: Request):
     request.session.clear()

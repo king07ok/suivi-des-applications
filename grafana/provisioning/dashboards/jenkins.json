@@ -94,7 +94,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "expr": "probe_success{job=\"jenkins-tls\",service_name=\"jenkins\"}",
           "legendFormat": "HTTPS",
           "instant": true
         }
@@ -138,7 +138,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_http_status_code{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "expr": "probe_http_status_code{job=\"jenkins-tls\",service_name=\"jenkins\"}",
           "legendFormat": "HTTP",
           "instant": true
         }
@@ -181,7 +181,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_duration_seconds{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "expr": "probe_duration_seconds{job=\"jenkins-tls\",service_name=\"jenkins\"}",
           "legendFormat": "Durée totale"
         }
       ],
@@ -220,13 +220,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_http_ssl{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "expr": "probe_http_ssl{job=\"jenkins-tls\",service_name=\"jenkins\"}",
           "legendFormat": "HTTPS activé",
           "instant": true
         },
         {
           "refId": "B",
-          "expr": "probe_http_version{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "expr": "probe_http_version{job=\"jenkins-tls\",service_name=\"jenkins\"}",
           "legendFormat": "Version HTTP",
           "instant": true
         }
@@ -270,17 +270,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "scrape_duration_seconds{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "expr": "scrape_duration_seconds{job=\"jenkins-tls\",service_name=\"jenkins\"}",
           "legendFormat": "Durée scrape"
         },
         {
           "refId": "B",
-          "expr": "scrape_samples_scraped{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "expr": "scrape_samples_scraped{job=\"jenkins-tls\",service_name=\"jenkins\"}",
           "legendFormat": "Séries reçues"
         },
         {
           "refId": "C",
-          "expr": "scrape_samples_post_metric_relabeling{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "expr": "scrape_samples_post_metric_relabeling{job=\"jenkins-tls\",service_name=\"jenkins\"}",
           "legendFormat": "Séries conservées"
         }
       ],
@@ -320,7 +320,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * avg_over_time(probe_success{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}[24h])",
+          "expr": "100 * avg_over_time(probe_success{job=\"jenkins-tls\",service_name=\"jenkins\"}[24h])",
           "instant": true
         }
       ],
@@ -363,7 +363,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.95, probe_duration_seconds{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}[24h])",
+          "expr": "quantile_over_time(0.95, probe_duration_seconds{job=\"jenkins-tls\",service_name=\"jenkins\"}[24h])",
           "legendFormat": "p95"
         }
       ],
@@ -1176,7 +1176,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_dns_lookup_time_seconds{job=\"jenkins-tls\",instance=\"https://fineness-subzero-buccaneer.ngrok-free.dev/login\"}",
+          "expr": "probe_dns_lookup_time_seconds{job=\"jenkins-tls\",service_name=\"jenkins\"}",
           "legendFormat": "Résolution DNS"
         }
       ],
